@@ -59,3 +59,12 @@ export type SearchStatus =
   | 'searching'
   | 'done'
   | 'error';
+
+export interface UsageSummary {
+  month: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  isLimited: boolean;
+  usingOwnApiKey?: boolean;
+}

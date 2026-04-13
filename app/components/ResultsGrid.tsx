@@ -8,6 +8,9 @@ interface ResultsGridProps {
   mode: Mode;
   descriptors?: VisualDescriptors | null;
   modeLabel?: string;
+  onExportMoodBoard?: () => void;
+  exportDisabled?: boolean;
+  exportLabel?: string;
 }
 
 function parseNumericValue(value: string | null | undefined): number | null {
@@ -98,7 +101,15 @@ function summarizeShotMetadata(photos: RankedPhoto[]) {
   };
 }
 
-export function ResultsGrid({ photos, mode, descriptors, modeLabel }: ResultsGridProps) {
+export function ResultsGrid({
+  photos,
+  mode,
+  descriptors,
+  modeLabel,
+  onExportMoodBoard,
+  exportDisabled = false,
+  exportLabel = 'Download board',
+}: ResultsGridProps) {
   if (photos.length === 0) return null;
   const [heroPhoto, ...masonryPhotos] = photos;
   const isMoodBoard = mode === 'moodboard';
@@ -127,9 +138,21 @@ export function ResultsGrid({ photos, mode, descriptors, modeLabel }: ResultsGri
           <p className="results-header__eyebrow">{modeLabel ?? 'Curated Lens'}</p>
           <h2 className="results-header__title">{title}</h2>
         </div>
-        <p className="results-header__count">
-          {photos.length} image{photos.length !== 1 ? 's' : ''}
-        </p>
+        <div className="results-header__actions">
+          <p className="results-header__count">
+            {photos.length} image{photos.length !== 1 ? 's' : ''}
+          </p>
+          {isMoodBoard && onExportMoodBoard && (
+            <button
+              type="button"
+              className="export-btn"
+              onClick={onExportMoodBoard}
+              disabled={exportDisabled}
+            >
+              {exportLabel}
+            </button>
+          )}
+        </div>
       </div>
 
       {descriptorTags.length > 0 && (
