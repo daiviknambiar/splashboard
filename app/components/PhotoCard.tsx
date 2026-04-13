@@ -16,6 +16,12 @@ function formatFocalLength(value: string) {
   return trimmed.endsWith('mm') ? trimmed : `${trimmed}mm`;
 }
 
+function formatCameraName(make?: string | null, model?: string | null) {
+  if (make && model && model.toLowerCase().startsWith(make.toLowerCase())) return model;
+  if (make && model) return `${make} ${model}`;
+  return model ?? make ?? null;
+}
+
 export function PhotoCard({
   photo,
   showExif = false,
@@ -39,10 +45,25 @@ export function PhotoCard({
   }, [photo.links.download_location, photo.links.html]);
 
   const exif = photo.exif;
-  const hasExif =
-    showExif &&
-    exif &&
-    (exif.model || exif.focal_length || exif.aperture || exif.exposure_time || exif.iso);
+  const cameraName = formatCameraName(exif?.make, exif?.model);
+  const shotLens = [
+    exif?.focal_length ? formatFocalLength(exif.focal_length) : null,
+    exif?.aperture ? `f/${exif.aperture}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' · ');
+  const shotExposure = [
+    exif?.exposure_time ? `${exif.exposure_time}s` : null,
+    typeof exif?.iso === 'number' ? `ISO ${exif.iso}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' · ');
+  const aspectRatio =
+    variant === 'shot'
+      ? featured
+        ? '16 / 10'
+        : '4 / 5'
+      : `${photo.width} / ${photo.height}`;
 
   return (
     <div
@@ -51,7 +72,7 @@ export function PhotoCard({
       }`}
       style={{
         animationDelay: `${Math.min(index * 35, 600)}ms`,
-        aspectRatio: `${photo.width} / ${photo.height}`,
+        aspectRatio,
       }}
       onClick={handleClick}
       role="button"
@@ -69,26 +90,6 @@ export function PhotoCard({
         loading="lazy"
         decoding="async"
       />
-
-      {variant === 'shot' && (
-        <div className="photo-card__meta-panel" aria-label="Shot metadata">
-          {hasExif ? (
-            <>
-              {exif?.model && <span className="photo-card__meta-chip">{exif.model}</span>}
-              {exif?.focal_length && (
-                <span className="photo-card__meta-chip">{formatFocalLength(exif.focal_length)}</span>
-              )}
-              {exif?.aperture && <span className="photo-card__meta-chip">f/{exif.aperture}</span>}
-              {exif?.exposure_time && (
-                <span className="photo-card__meta-chip">{exif.exposure_time}s</span>
-              )}
-              {exif?.iso && <span className="photo-card__meta-chip">ISO {exif.iso}</span>}
-            </>
-          ) : (
-            <span className="photo-card__meta-chip photo-card__meta-chip--muted">Metadata unavailable</span>
-          )}
-        </div>
-      )}
 
       {/* Hover overlay */}
       <div className="photo-card__overlay" aria-hidden="true">
@@ -120,27 +121,49 @@ export function PhotoCard({
             Unsplash
           </a>
         </p>
-
-        {hasExif && (
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-            {exif?.model && (
-              <span className="text-white/50 text-[10px] font-mono">{exif.model}</span>
-            )}
-            {exif?.focal_length && (
-              <span className="text-white/50 text-[10px] font-mono">{formatFocalLength(exif.focal_length)}</span>
-            )}
-            {exif?.aperture && (
-              <span className="text-white/50 text-[10px] font-mono">f/{exif.aperture}</span>
-            )}
-            {exif?.exposure_time && (
-              <span className="text-white/50 text-[10px] font-mono">{exif.exposure_time}s</span>
-            )}
-            {exif?.iso && (
-              <span className="text-white/50 text-[10px] font-mono">ISO {exif.iso}</span>
-            )}
-          </div>
-        )}
       </div>
+
+      {variant === 'shot' && showExif && featured && (
+        <dl className="photo-card__meta-readout" aria-label="Shot settings details">
+          <div className="photo-card__meta-readout-row">
+            <dt>Camera</dt>
+            <dd>{cameraName ?? 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>Lens</dt>
+            <dd>{exif?.focal_length ? formatFocalLength(exif.focal_length) : 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>Aperture</dt>
+            <dd>{exif?.aperture ? `f/${exif.aperture}` : 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>Shutter</dt>
+            <dd>{exif?.exposure_time ? `${exif.exposure_time}s` : 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>ISO</dt>
+            <dd>{typeof exif?.iso === 'number' ? `ISO ${exif.iso}` : 'Not published'}</dd>
+          </div>
+        </dl>
+      )}
+
+      {variant === 'shot' && showExif && !featured && (
+        <dl className="photo-card__meta-readout photo-card__meta-readout--hover" aria-label="Shot settings details">
+          <div className="photo-card__meta-readout-row">
+            <dt>Camera</dt>
+            <dd>{cameraName ?? 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>Lens</dt>
+            <dd>{shotLens || 'Not published'}</dd>
+          </div>
+          <div className="photo-card__meta-readout-row">
+            <dt>Exposure</dt>
+            <dd>{shotExposure || 'Not published'}</dd>
+          </div>
+        </dl>
+      )}
     </div>
   );
 }

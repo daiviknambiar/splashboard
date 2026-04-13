@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useRef, type FormEvent } from 'react';
+import { useRef, type FormEvent } from 'react';
 
 interface MoodBoardProps {
+  value: string;
+  onValueChange: (value: string) => void;
   onSearch: (description: string) => void;
   disabled?: boolean;
 }
@@ -15,8 +17,7 @@ const PLACEHOLDERS = [
   'abandoned greenhouse, overgrown and beautiful, diffused natural light',
 ];
 
-export function MoodBoard({ onSearch, disabled }: MoodBoardProps) {
-  const [value, setValue] = useState('');
+export function MoodBoard({ value, onValueChange, onSearch, disabled }: MoodBoardProps) {
   const placeholder = PLACEHOLDERS[0] ?? '';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,12 +37,12 @@ export function MoodBoard({ onSearch, disabled }: MoodBoardProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
+    <form onSubmit={handleSubmit} className="w-full h-full">
       <div className="input-zone relative">
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
@@ -50,7 +51,7 @@ export function MoodBoard({ onSearch, disabled }: MoodBoardProps) {
           className="mood-textarea"
         />
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-[var(--text-muted)]">
             <kbd className="kbd">Enter</kbd> runs it. <kbd className="kbd">Shift+Enter</kbd> adds a new line.
           </p>
@@ -73,14 +74,14 @@ export function MoodBoard({ onSearch, disabled }: MoodBoardProps) {
           </button>
         </div>
 
-        <div className="prompt-row mt-4" aria-label="Suggested prompts">
+        <div className="prompt-row mt-3" aria-label="Suggested prompts">
           {PLACEHOLDERS.slice(0, 4).map((prompt) => (
             <button
               key={prompt}
               type="button"
               className="prompt-chip"
               onClick={() => {
-                setValue(prompt);
+                onValueChange(prompt);
                 textareaRef.current?.focus();
               }}
               disabled={disabled}

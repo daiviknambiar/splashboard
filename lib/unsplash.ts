@@ -34,6 +34,20 @@ export async function searchPhotos(
   return (data.results ?? []) as UnsplashPhoto[];
 }
 
+export async function getPhotoDetails(photoId: string): Promise<UnsplashPhoto> {
+  const res = await fetch(`${UNSPLASH_BASE}/photos/${photoId}`, {
+    headers: headers(),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Unsplash photo details failed (${res.status}): ${body}`);
+  }
+
+  return (await res.json()) as UnsplashPhoto;
+}
+
 export async function triggerDownload(downloadLocation: string): Promise<void> {
   const res = await fetch(downloadLocation, {
     headers: headers(),

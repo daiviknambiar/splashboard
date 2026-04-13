@@ -1,7 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { VisualDescriptors } from '@/types';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+
+export interface AnalyzeOptions {
+  apiKey?: string;
+}
 
 const DESCRIPTOR_SCHEMA = `{
   "locationType": "e.g. 'cafe interior', 'coastal cliff', 'urban canyon', 'forest path'",
@@ -39,21 +43,25 @@ Rules:
 - Keep values concise (3–6 words each)
 - architectureStyle is null if not applicable`;
 
-export async function analyzeText(description: string): Promise<VisualDescriptors> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const result = await model.generateContent(TEXT_PROMPT(description));
-  return parseDescriptors(result.response.text());
-}
-
 export async function analyzeImage(
   base64Image: string,
-  mimeType: string
+  mimeType: string,
+  options?: AnalyzeOptions
 ): Promise<VisualDescriptors> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = getModel(options);
   const result = await model.generateContent([
     IMAGE_PROMPT,
     { inlineData: { data: base64Image, mimeType } },
   ]);
+  return parseDescriptors(result.response.text());
+}
+
+export async function analyzeText(
+  description: string,
+  options?: AnalyzeOptions
+): Promise<VisualDescriptors> {
+  const model = getModel(options);
+  const result = await model.generateContent(TEXT_PROMPT(description));
   return parseDescriptors(result.response.text());
 }
 
@@ -70,4 +78,14 @@ function parseDescriptors(raw: string): VisualDescriptors {
   }
 
   return parsed as VisualDescriptors;
+}
+
+function getModel(options?: AnalyzeOptions) {
+  const resolvedApiKey = options?.apiKey?.trim() || process.env.GEMINI_API_KEY;
+  if (!resolvedApiKey) {
+    throw new Error('Gemini API key is not configured');
+  }
+
+  const genAI = new GoogleGenerativeAI(resolvedApiKey);
+  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }

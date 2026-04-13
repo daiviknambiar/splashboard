@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchPhotos } from '@/lib/unsplash';
+import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
 import { mergeAndRankResults } from '@/lib/ranker';
 import { VisualDescriptors } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const descriptors: VisualDescriptors = await request.json();
+    const body = await request.json();
+    const descriptors = body as VisualDescriptors;
+    const lens = body?.lens === 'stealthisshot' ? 'stealthisshot' : 'moodboard';
 
     if (!descriptors.searchTerms || !Array.isArray(descriptors.searchTerms)) {
       return NextResponse.json({ error: 'searchTerms array is required' }, { status: 400 });
@@ -35,8 +37,39 @@ export async function POST(request: NextRequest) {
     );
 
     const ranked = mergeAndRankResults(batches, descriptors);
+    const topResults = ranked.slice(0, 24);
 
-    return NextResponse.json({ photos: ranked.slice(0, 24), descriptors });
+    // Unsplash search responses often have partial EXIF; hydrate full photo payload for shot mode.
+    const enrichedResults =
+      lens === 'stealthisshot'
+        ? await Promise.all(
+            topResults.map(async (photo) => {
+              const hasExif =
+                photo.exif &&
+                (photo.exif.make ||
+                  photo.exif.model ||
+                  photo.exif.focal_length ||
+                  photo.exif.aperture ||
+                  photo.exif.exposure_time ||
+                  photo.exif.iso);
+              if (hasExif) return photo;
+
+              try {
+                const details = await getPhotoDetails(photo.id);
+                return {
+                  ...photo,
+                  ...details,
+                  score: photo.score,
+                };
+              } catch (err) {
+                console.warn(`[/api/search] details fetch failed for ${photo.id}:`, err);
+                return photo;
+              }
+            })
+          )
+        : topResults;
+
+    return NextResponse.json({ photos: enrichedResults, descriptors });
   } catch (err) {
     console.error('[/api/search]', err);
     return NextResponse.json(

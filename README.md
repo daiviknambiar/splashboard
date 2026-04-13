@@ -10,6 +10,12 @@ Create `.env.local`:
 GEMINI_API_KEY=...
 UNSPLASH_ACCESS_KEY=...
 UNSPLASH_SECRET_KEY=...
+NEXT_PUBLIC_CONTACT_EMAIL=you@example.com
+
+# Optional
+# MONTHLY_ACTION_LIMIT=15
+# USAGE_FINGERPRINT_SALT=change-this-in-prod
+# USAGE_STORE_FILE=.context/usage-state.json
 ```
 
 ```bash
@@ -22,7 +28,7 @@ App runs at `http://localhost:3000`.
 ### Stack
 
 - **Next.js 16** (App Router)
-- **Gemini 2.0 Flash** — vision analysis, structured descriptor extraction
+- **Gemini 2.5 Flash** — vision analysis, structured descriptor extraction
 - **Unsplash API** — image search, EXIF data, download tracking
 - **Tailwind CSS v4**
 
@@ -31,6 +37,7 @@ App runs at `http://localhost:3000`.
 ```
 Input (text or image)
   → POST /api/analyze  → Gemini extracts { locationType, lighting, palette, mood, framing, searchTerms }
+                        → free tier is rate-limited (default 15 actions/month) unless user supplies their own Gemini key
   → POST /api/search   → 3 parallel Unsplash queries, results merged + ranked
   → Results grid with masonry layout
   → POST /api/download → download trigger called on photo interaction (Unsplash requirement)
