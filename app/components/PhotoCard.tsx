@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { triggerDownload } from '@/lib/unsplash';
 import type { UnsplashPhoto } from '@/types';
 
 interface PhotoCardProps {
@@ -30,12 +31,8 @@ export function PhotoCard({
   variant = 'mood',
 }: PhotoCardProps) {
   const handleClick = useCallback(async () => {
-    // Trigger download endpoint per Unsplash guidelines — fire-and-forget
-    fetch('/api/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ downloadLocation: photo.links.download_location }),
-    }).catch(() => {});
+    // Trigger Unsplash download endpoint per guidelines — fire-and-forget.
+    triggerDownload(photo.links.download_location).catch(() => {});
 
     window.open(
       `${photo.links.html}?utm_source=splashboard&utm_medium=referral`,

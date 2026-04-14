@@ -2,9 +2,21 @@ import { UnsplashPhoto } from '@/types';
 
 const UNSPLASH_BASE = 'https://api.unsplash.com';
 
+function resolveAccessKey(): string {
+  const key =
+    process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY?.trim() ||
+    process.env.UNSPLASH_ACCESS_KEY?.trim();
+  if (!key) {
+    throw new Error(
+      'Unsplash access key is not configured. Set NEXT_PUBLIC_UNSPLASH_ACCESS_KEY for static deployments.'
+    );
+  }
+  return key;
+}
+
 function headers(): Record<string, string> {
   return {
-    Authorization: `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}`,
+    Authorization: `Client-ID ${resolveAccessKey()}`,
     'Accept-Version': 'v1',
   };
 }
