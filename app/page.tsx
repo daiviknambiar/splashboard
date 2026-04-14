@@ -6,6 +6,9 @@ import { MoodBoard } from './components/MoodBoard';
 import { StealTheShot } from './components/StealTheShot';
 import { ResultsGrid } from './components/ResultsGrid';
 import { SplashAnimation } from './components/SplashAnimation';
+import { analyzeImage, analyzeText } from '@/lib/gemini';
+import { mergeAndRankResults } from '@/lib/ranker';
+import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
 import type { Mode, RankedPhoto, SearchStatus, UsageSummary, VisualDescriptors } from '@/types';
 
 const STATUS_COPY: Record<SearchStatus, string | null> = {
@@ -17,14 +20,22 @@ const STATUS_COPY: Record<SearchStatus, string | null> = {
 };
 
 type AnalyzePayload =
-  | { type: 'text'; description: string; geminiApiKey?: string }
-  | { type: 'image'; image: string; mimeType: string; geminiApiKey?: string };
+  | { type: 'text'; description: string }
+  | { type: 'image'; image: string; mimeType: string };
 
 type ModeResults = Record<Mode, { photos: RankedPhoto[]; descriptors: VisualDescriptors | null }>;
 type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null }>;
-type AnalyzeResponse = { descriptors?: VisualDescriptors; usage?: UsageSummary };
+
+interface StoredUsageState {
+  month: string;
+  used: number;
+}
 
 const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
+const PUBLIC_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+const LOCAL_USAGE_KEY = 'splashboard:monthly-usage:v1';
+const DEFAULT_MONTHLY_LIMIT = 15;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -52,6 +63,157 @@ function formatMonth(monthKey: string): string {
 
   return new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(
     new Date(Date.UTC(yearNum, monthNum - 1, 1))
+  );
+}
+
+function getMonthKey(date = new Date()): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function getMonthlyLimit(): number {
+  const parsed = Number.parseInt(process.env.NEXT_PUBLIC_MONTHLY_ACTION_LIMIT ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_MONTHLY_LIMIT;
+  }
+  return parsed;
+}
+
+function toUsageSummary(used: number, limit: number, month: string, usingOwnApiKey = false): UsageSummary {
+  return {
+    month,
+    used,
+    limit,
+    remaining: Math.max(0, limit - used),
+    isLimited: used >= limit,
+    usingOwnApiKey,
+  };
+}
+
+function readStoredUsage(month: string): StoredUsageState {
+  if (typeof window === 'undefined') {
+    return { month, used: 0 };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_USAGE_KEY);
+    if (!raw) {
+      return { month, used: 0 };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredUsageState>;
+    const parsedUsed = Number(parsed.used);
+    if (
+      typeof parsed.month === 'string' &&
+      parsed.month === month &&
+      Number.isFinite(parsedUsed) &&
+      parsedUsed >= 0
+    ) {
+      return { month: parsed.month, used: parsedUsed };
+    }
+  } catch {
+    // fall through to reset
+  }
+
+  return { month, used: 0 };
+}
+
+function writeStoredUsage(state: StoredUsageState): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(LOCAL_USAGE_KEY, JSON.stringify(state));
+}
+
+function getUsageSummaryFromStorage(usingOwnApiKey = false): UsageSummary {
+  const month = getMonthKey();
+  const limit = getMonthlyLimit();
+  const state = readStoredUsage(month);
+  return toUsageSummary(state.used, limit, month, usingOwnApiKey);
+}
+
+function consumeMonthlyActionFromStorage(): { allowed: boolean; usage: UsageSummary } {
+  const month = getMonthKey();
+  const limit = getMonthlyLimit();
+  const state = readStoredUsage(month);
+  const nextUsed = Math.min(limit, state.used + 1);
+
+  if (state.used >= limit) {
+    return {
+      allowed: false,
+      usage: toUsageSummary(state.used, limit, month),
+    };
+  }
+
+  writeStoredUsage({ month, used: nextUsed });
+  return {
+    allowed: true,
+    usage: toUsageSummary(nextUsed, limit, month),
+  };
+}
+
+function resolveGeminiApiKey(usingOwnGeminiKey: boolean, ownGeminiKey: string): string | null {
+  if (usingOwnGeminiKey) {
+    const custom = ownGeminiKey.trim();
+    return custom.length > 0 ? custom : null;
+  }
+
+  return PUBLIC_GEMINI_API_KEY && PUBLIC_GEMINI_API_KEY.length > 0 ? PUBLIC_GEMINI_API_KEY : null;
+}
+
+async function runUnsplashSearch(descriptors: VisualDescriptors, lens: Mode): Promise<RankedPhoto[]> {
+  const queries = [
+    `${descriptors.locationType} ${descriptors.lightingConditions}`.trim(),
+    descriptors.searchTerms[0] ?? `${descriptors.mood} ${descriptors.colorPalette}`.trim(),
+    descriptors.searchTerms[1] ?? `${descriptors.framing} ${descriptors.locationType}`.trim(),
+  ]
+    .filter((query): query is string => query.trim().length > 0)
+    .slice(0, 3);
+
+  const batches = await Promise.all(
+    queries.map(async (query, index) => {
+      try {
+        const photos = await searchPhotos(query, 10);
+        return { photos, queryIndex: index };
+      } catch (err) {
+        console.warn(`[unsplash] query ${index} failed:`, err);
+        return { photos: [], queryIndex: index };
+      }
+    })
+  );
+
+  const ranked = mergeAndRankResults(batches, descriptors);
+  const topResults = ranked.slice(0, 24);
+
+  if (lens !== 'stealthisshot') {
+    return topResults;
+  }
+
+  return Promise.all(
+    topResults.map(async (photo) => {
+      const hasExif =
+        photo.exif &&
+        (photo.exif.make ||
+          photo.exif.model ||
+          photo.exif.focal_length ||
+          photo.exif.aperture ||
+          photo.exif.exposure_time ||
+          photo.exif.iso);
+      if (hasExif) {
+        return photo;
+      }
+
+      try {
+        const details = await getPhotoDetails(photo.id);
+        return {
+          ...photo,
+          ...details,
+          score: photo.score,
+        };
+      } catch (err) {
+        console.warn(`[unsplash] details fetch failed for ${photo.id}:`, err);
+        return photo;
+      }
+    })
   );
 }
 
@@ -297,13 +459,18 @@ export default function Home() {
         return;
       }
 
-      const payload =
-        usingOwnGeminiKey && ownGeminiKey.trim().length > 0
-          ? {
-              ...analyzePayload,
-              geminiApiKey: ownGeminiKey.trim(),
-            }
-          : analyzePayload;
+      const resolvedGeminiApiKey = resolveGeminiApiKey(usingOwnGeminiKey, ownGeminiKey);
+      if (!resolvedGeminiApiKey) {
+        setUiByMode((prev) => ({
+          ...prev,
+          [targetMode]: {
+            status: 'error',
+            errorMsg:
+              'Gemini API key not configured. Set NEXT_PUBLIC_GEMINI_API_KEY or enable "Use your own Gemini key".',
+          },
+        }));
+        return;
+      }
 
       setResultsByMode((prev) => ({
         ...prev,
@@ -322,26 +489,36 @@ export default function Home() {
       setSplashActive(true);
 
       try {
-        const analyzeRes = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        if (!usingOwnGeminiKey) {
+          const quota = consumeMonthlyActionFromStorage();
+          setUsage(quota.usage);
 
-        const analyzeData = (await analyzeRes.json().catch(() => ({}))) as AnalyzeResponse & {
-          error?: string;
-        };
-        if (analyzeData.usage) {
-          setUsage(analyzeData.usage);
+          if (!quota.allowed) {
+            throw new Error(
+              `You have reached the free monthly limit (${quota.usage.limit} actions). Add your own Gemini API key or contact us for self-hosting.`
+            );
+          }
+        } else {
+          setUsage(getUsageSummaryFromStorage(true));
         }
 
-        if (!analyzeRes.ok) {
-          throw new Error(analyzeData.error ?? 'Analysis failed');
-        }
-
-        const desc = analyzeData.descriptors;
-        if (!desc) {
-          throw new Error('Analysis response is missing descriptors');
+        let descriptors: VisualDescriptors;
+        if (analyzePayload.type === 'text') {
+          const trimmed = analyzePayload.description.trim();
+          if (trimmed.length < 3 || trimmed.length > 1000) {
+            throw new Error('description must be 3–1000 characters');
+          }
+          descriptors = await analyzeText(trimmed, { apiKey: resolvedGeminiApiKey });
+        } else {
+          if (!analyzePayload.image || typeof analyzePayload.image !== 'string') {
+            throw new Error('base64 image is required');
+          }
+          if (!ALLOWED_IMAGE_TYPES.has(analyzePayload.mimeType)) {
+            throw new Error('Unsupported image type');
+          }
+          descriptors = await analyzeImage(analyzePayload.image, analyzePayload.mimeType, {
+            apiKey: resolvedGeminiApiKey,
+          });
         }
 
         setUiByMode((prev) => ({
@@ -352,26 +529,12 @@ export default function Home() {
           },
         }));
 
-        const searchRes = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...desc,
-            lens: targetMode,
-          }),
-        });
-
-        if (!searchRes.ok) {
-          const err = await searchRes.json().catch(() => ({}));
-          throw new Error(err.error ?? 'Search failed');
-        }
-
-        const data = await searchRes.json();
+        const photos = await runUnsplashSearch(descriptors, targetMode);
         setResultsByMode((prev) => ({
           ...prev,
           [targetMode]: {
-            photos: data.photos ?? [],
-            descriptors: desc,
+            photos,
+            descriptors,
           },
         }));
         setUiByMode((prev) => ({
@@ -401,20 +564,7 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const loadUsage = async () => {
-      try {
-        const res = await fetch('/api/usage', { cache: 'no-store' });
-        if (!res.ok) return;
-        const payload = (await res.json()) as { usage?: UsageSummary };
-        if (payload.usage) {
-          setUsage(payload.usage);
-        }
-      } catch {
-        // fail silently; UI already has loading fallback copy
-      }
-    };
-
-    void loadUsage();
+    setUsage(getUsageSummaryFromStorage(false));
   }, []);
 
   const handleMoodBoardSearch = useCallback(

@@ -7,15 +7,12 @@ Visual discovery tool powered by Gemini + Unsplash. Describe a vibe or upload a 
 Create `.env.local`:
 
 ```
-GEMINI_API_KEY=...
-UNSPLASH_ACCESS_KEY=...
-UNSPLASH_SECRET_KEY=...
+NEXT_PUBLIC_GEMINI_API_KEY=...
+NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...
 NEXT_PUBLIC_CONTACT_EMAIL=you@example.com
 
 # Optional
-# MONTHLY_ACTION_LIMIT=15
-# USAGE_FINGERPRINT_SALT=change-this-in-prod
-# USAGE_STORE_FILE=.context/usage-state.json
+# NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=15
 ```
 
 ```bash
@@ -36,17 +33,17 @@ App runs at `http://localhost:3000`.
 
 ```
 Input (text or image)
-  → POST /api/analyze  → Gemini extracts { locationType, lighting, palette, mood, framing, searchTerms }
-                        → free tier is rate-limited (default 15 actions/month) unless user supplies their own Gemini key
-  → POST /api/search   → 3 parallel Unsplash queries, results merged + ranked
+  → Browser Gemini call  → Extracts { locationType, lighting, palette, mood, framing, searchTerms }
+                         → free tier is tracked in localStorage (default 15 actions/month) unless user supplies their own Gemini key
+  → Browser Unsplash calls → 3 parallel queries, results merged + ranked
   → Results grid with masonry layout
-  → POST /api/download → download trigger called on photo interaction (Unsplash requirement)
+  → Browser download trigger → Unsplash download endpoint called on photo interaction
 ```
 
 ### Unsplash compliance
 
 - Every photo attributed: `Photo by [Name] on Unsplash` — both linked with UTM params
 - Images served directly from Unsplash CDN (no proxying via `<img>` tags)
-- Download endpoint triggered on every photo click (required by Unsplash guidelines)
+- Unsplash download tracking request triggered on every photo click (required by Unsplash guidelines)
 - No Unsplash logo used anywhere
 - App name does not imply official Unsplash affiliation
