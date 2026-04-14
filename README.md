@@ -7,11 +7,12 @@ Visual discovery tool powered by Gemini + Unsplash. Describe a vibe or upload a 
 Create `.env.local`:
 
 ```
-NEXT_PUBLIC_GEMINI_API_KEY=...
+GEMINI_API_KEY=...
 NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...
 NEXT_PUBLIC_CONTACT_EMAIL=you@example.com
 
 # Optional
+# NEXT_PUBLIC_GEMINI_API_KEY=... # fallback if GEMINI_API_KEY is not set
 # NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=15
 ```
 
@@ -33,7 +34,7 @@ App runs at `http://localhost:3000`.
 
 ```
 Input (text or image)
-  → Browser Gemini call  → Extracts { locationType, lighting, palette, mood, framing, searchTerms }
+  → Server Gemini call   → Extracts { locationType, lighting, palette, mood, framing, searchTerms }
                          → free tier is tracked in localStorage (default 15 actions/month) unless user supplies their own Gemini key
   → Browser Unsplash calls → 3 parallel queries, results merged + ranked
   → Results grid with masonry layout

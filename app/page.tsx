@@ -6,7 +6,6 @@ import { MoodBoard } from './components/MoodBoard';
 import { StealTheShot } from './components/StealTheShot';
 import { ResultsGrid } from './components/ResultsGrid';
 import { SplashAnimation } from './components/SplashAnimation';
-import { analyzeImage, analyzeText } from '@/lib/gemini';
 import { mergeAndRankResults } from '@/lib/ranker';
 import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
 import type { Mode, RankedPhoto, SearchStatus, UsageSummary, VisualDescriptors } from '@/types';
@@ -32,7 +31,6 @@ interface StoredUsageState {
 }
 
 const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || 'daiviknambiarpro@gmail.com';
-const PUBLIC_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
 const LOCAL_USAGE_KEY = 'splashboard:monthly-usage:v1';
 const DEFAULT_MONTHLY_LIMIT = 15;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -155,13 +153,32 @@ function consumeMonthlyActionFromStorage(): { allowed: boolean; usage: UsageSumm
   };
 }
 
-function resolveGeminiApiKey(usingOwnGeminiKey: boolean, ownGeminiKey: string): string | null {
-  if (usingOwnGeminiKey) {
-    const custom = ownGeminiKey.trim();
-    return custom.length > 0 ? custom : null;
+async function analyzeWithApi(
+  payload: AnalyzePayload,
+  ownApiKey: string | undefined
+): Promise<VisualDescriptors> {
+  const response = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      ...(ownApiKey ? { apiKey: ownApiKey } : {}),
+    }),
+  });
+
+  const responseData = (await response.json().catch(() => null)) as
+    | { descriptors?: VisualDescriptors; error?: string }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(responseData?.error || 'Unable to analyze input.');
   }
 
-  return PUBLIC_GEMINI_API_KEY && PUBLIC_GEMINI_API_KEY.length > 0 ? PUBLIC_GEMINI_API_KEY : null;
+  if (!responseData?.descriptors) {
+    throw new Error('Invalid analysis response from server.');
+  }
+
+  return responseData.descriptors;
 }
 
 async function runUnsplashSearch(descriptors: VisualDescriptors, lens: Mode): Promise<RankedPhoto[]> {
@@ -463,18 +480,7 @@ export default function Home() {
         return;
       }
 
-      const resolvedGeminiApiKey = resolveGeminiApiKey(usingOwnGeminiKey, ownGeminiKey);
-      if (!resolvedGeminiApiKey) {
-        setUiByMode((prev) => ({
-          ...prev,
-          [targetMode]: {
-            status: 'error',
-            errorMsg:
-              'Gemini API key not configured. Set NEXT_PUBLIC_GEMINI_API_KEY or enable "Use your own Gemini key".',
-          },
-        }));
-        return;
-      }
+      const ownApiKey = ownGeminiKey.trim();
 
       setResultsByMode((prev) => ({
         ...prev,
@@ -512,7 +518,10 @@ export default function Home() {
           if (trimmed.length < 3 || trimmed.length > 1000) {
             throw new Error('description must be 3–1000 characters');
           }
-          descriptors = await analyzeText(trimmed, { apiKey: resolvedGeminiApiKey });
+          descriptors = await analyzeWithApi(
+            { type: 'text', description: trimmed },
+            usingOwnGeminiKey ? ownApiKey : undefined
+          );
         } else {
           if (!analyzePayload.image || typeof analyzePayload.image !== 'string') {
             throw new Error('base64 image is required');
@@ -520,9 +529,14 @@ export default function Home() {
           if (!ALLOWED_IMAGE_TYPES.has(analyzePayload.mimeType)) {
             throw new Error('Unsupported image type');
           }
-          descriptors = await analyzeImage(analyzePayload.image, analyzePayload.mimeType, {
-            apiKey: resolvedGeminiApiKey,
-          });
+          descriptors = await analyzeWithApi(
+            {
+              type: 'image',
+              image: analyzePayload.image,
+              mimeType: analyzePayload.mimeType,
+            },
+            usingOwnGeminiKey ? ownApiKey : undefined
+          );
         }
 
         setUiByMode((prev) => ({
