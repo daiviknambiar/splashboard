@@ -31,7 +31,7 @@ interface StoredUsageState {
   used: number;
 }
 
-const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
+const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || 'daiviknambiarpro@gmail.com';
 const PUBLIC_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
 const LOCAL_USAGE_KEY = 'splashboard:monthly-usage:v1';
 const DEFAULT_MONTHLY_LIMIT = 15;
@@ -61,7 +61,11 @@ function formatMonth(monthKey: string): string {
     return monthKey;
   }
 
-  return new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(
     new Date(Date.UTC(yearNum, monthNum - 1, 1))
   );
 }
@@ -738,7 +742,7 @@ export default function Home() {
                         Contact me to buy the code or set up self-hosting.
                       </a>
                     ) : (
-                      'Set NEXT_PUBLIC_CONTACT_EMAIL to enable direct contact.'
+                      'email daiviknambiarpro@gmail.com'
                     )}
                   </p>
                 </div>
