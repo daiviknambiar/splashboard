@@ -29,7 +29,6 @@ type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null 
 const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard';
 const DEFAULT_MONTHLY_LIMIT = 4;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const GEMINI_KEY_STORAGE_KEY = 'splashboard.gemini_api_key';
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -348,24 +347,6 @@ export default function Home() {
   const hasUserGeminiKey = geminiApiKey.trim().length > 0;
   const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserGeminiKey;
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedKey = window.localStorage.getItem(GEMINI_KEY_STORAGE_KEY);
-    if (savedKey) {
-      setGeminiApiKey(savedKey);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const trimmed = geminiApiKey.trim();
-    if (trimmed.length > 0) {
-      window.localStorage.setItem(GEMINI_KEY_STORAGE_KEY, trimmed);
-      return;
-    }
-    window.localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
-  }, [geminiApiKey]);
-
   const runSearch = useCallback(
     async (targetMode: Mode, analyzePayload: AnalyzePayload) => {
       if (freeTierBlocked) {
@@ -630,7 +611,7 @@ export default function Home() {
                     />
                     <p className="quota-panel__key-note">
                       {hasUserGeminiKey
-                        ? 'Stored locally in this browser and sent only to your configured backend on analyze requests.'
+                        ? 'Kept only in this tab session and sent only to your configured backend on analyze requests.'
                         : 'Add your key to continue when the free monthly limit is reached.'}
                     </p>
                   </div>
