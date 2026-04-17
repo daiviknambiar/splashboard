@@ -37,6 +37,14 @@ Frontend sends analysis requests to:
 
 If `NEXT_PUBLIC_API_BASE_URL` is empty, frontend falls back to same-origin `/api/analyze`.
 
+Optional request header:
+
+```txt
+x-gemini-api-key: <user key>
+```
+
+When present, backend should use the user key for Gemini analysis instead of the backend default Gemini key.
+
 Request body:
 
 ```json
@@ -73,7 +81,8 @@ Response body:
       "used": 1,
       "limit": 4,
       "remaining": 3,
-      "isLimited": false
+      "isLimited": false,
+      "usingOwnApiKey": false
     }
   },
   "error": null

@@ -280,6 +280,40 @@ body {
   color: var(--text-muted);
 }
 
+.quota-panel__key-entry {
+  margin-top: 0.48rem;
+}
+
+.quota-panel__key-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  margin-bottom: 0.26rem;
+}
+
+.quota-panel__key-input {
+  width: 100%;
+  height: 2.1rem;
+  border-radius: 0.54rem;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 26%);
+  background: color-mix(in srgb, var(--surface), white 14%);
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 0 0.62rem;
+}
+
+.quota-panel__key-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.quota-panel__key-note {
+  margin: 0.36rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-subtle);
+}
+
 .quota-panel__alert {
   margin: 0.58rem 0 0;
   border: 1px solid #d59a93;

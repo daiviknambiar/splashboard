@@ -29,6 +29,7 @@ type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null 
 const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard';
 const DEFAULT_MONTHLY_LIMIT = 4;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const GEMINI_KEY_STORAGE_KEY = 'splashboard.gemini_api_key';
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -343,7 +344,27 @@ export default function Home() {
   });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [showFreePlanNotice, setShowFreePlanNotice] = useState(false);
-  const freeTierBlocked = Boolean(usage?.isLimited);
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const hasUserGeminiKey = geminiApiKey.trim().length > 0;
+  const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserGeminiKey;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedKey = window.localStorage.getItem(GEMINI_KEY_STORAGE_KEY);
+    if (savedKey) {
+      setGeminiApiKey(savedKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const trimmed = geminiApiKey.trim();
+    if (trimmed.length > 0) {
+      window.localStorage.setItem(GEMINI_KEY_STORAGE_KEY, trimmed);
+      return;
+    }
+    window.localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
+  }, [geminiApiKey]);
 
   const runSearch = useCallback(
     async (targetMode: Mode, analyzePayload: AnalyzePayload) => {
@@ -387,6 +408,7 @@ export default function Home() {
               type: 'text',
               mode: targetMode,
             },
+            geminiApiKey,
           });
         } else {
           if (!analyzePayload.image || typeof analyzePayload.image !== 'string') {
@@ -402,6 +424,7 @@ export default function Home() {
               mimeType: analyzePayload.mimeType,
               mode: targetMode,
             },
+            geminiApiKey,
           });
         }
         const descriptors = analysis.descriptors;
@@ -458,7 +481,7 @@ export default function Home() {
         setSplashActive(false);
       }
     },
-    [freeTierBlocked]
+    [freeTierBlocked, geminiApiKey]
   );
 
   const handleMoodBoardSearch = useCallback(
@@ -554,7 +577,9 @@ export default function Home() {
   const usageCopy = usage
     ? `Free plan: ${usage.limit} actions per month. ${usage.remaining} actions left for ${formatMonth(usage.month)}.`
     : `Free plan: ${DEFAULT_MONTHLY_LIMIT} actions per month.`;
-  const setupCopy = 'AI analysis is now handled by your configured backend API service.';
+  const setupCopy = hasUserGeminiKey
+    ? 'Using your Gemini API key for analysis. Free-plan monthly limits are bypassed while your key is active.'
+    : 'AI analysis is now handled by your configured backend API service.';
 
   return (
     <>
@@ -589,6 +614,26 @@ export default function Home() {
                 </p>
                 <div className="quota-panel" aria-live="polite">
                   <p className="quota-panel__eyebrow">Free plan</p>
+                  <div className="quota-panel__key-entry">
+                    <label htmlFor="gemini-api-key" className="quota-panel__key-label">
+                      Gemini API key (optional)
+                    </label>
+                    <input
+                      id="gemini-api-key"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={geminiApiKey}
+                      onChange={(event) => setGeminiApiKey(event.target.value)}
+                      placeholder="AIza..."
+                      className="quota-panel__key-input"
+                    />
+                    <p className="quota-panel__key-note">
+                      {hasUserGeminiKey
+                        ? 'Stored locally in this browser and sent only to your configured backend on analyze requests.'
+                        : 'Add your key to continue when the free monthly limit is reached.'}
+                    </p>
+                  </div>
                   {showFreePlanNotice && (
                     <>
                       <p className="quota-panel__summary">{usageCopy}</p>

@@ -11,6 +11,7 @@ interface BackendAnalyzeResponse {
 export interface AnalyzeRequestPayload {
   input: string;
   context?: Record<string, unknown>;
+  geminiApiKey?: string;
 }
 
 export interface AnalyzeResponse {
@@ -126,9 +127,17 @@ export async function analyzeInput(payload: AnalyzeRequestPayload): Promise<Anal
     throw new Error('Input is required.');
   }
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const userGeminiKey = payload.geminiApiKey?.trim();
+  if (userGeminiKey) {
+    headers['x-gemini-api-key'] = userGeminiKey;
+  }
+
   const response = await fetch(buildApiUrl('/api/analyze'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       input,
       context: payload.context,
