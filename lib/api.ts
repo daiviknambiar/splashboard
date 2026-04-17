@@ -1,6 +1,7 @@
 import type { UsageSummary, VisualDescriptors } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? '';
+const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 interface BackendAnalyzeResponse {
   output: string | null;
@@ -37,7 +38,17 @@ export class AnalyzeApiError extends Error {
 function buildApiUrl(pathname: string): string {
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   const trimmedBase = API_BASE_URL.replace(/\/+$/, '');
-  return trimmedBase.length > 0 ? `${trimmedBase}${normalizedPath}` : normalizedPath;
+  if (trimmedBase.length > 0) {
+    return `${trimmedBase}${normalizedPath}`;
+  }
+
+  if (typeof window !== 'undefined' && LOCALHOST_HOSTNAMES.has(window.location.hostname)) {
+    return normalizedPath;
+  }
+
+  throw new Error(
+    'Missing NEXT_PUBLIC_API_BASE_URL. Set it to your backend origin for non-local deployments.'
+  );
 }
 
 function cleanJsonText(value: string): string {

@@ -35,13 +35,16 @@ Frontend sends analysis requests to:
 
 `POST {NEXT_PUBLIC_API_BASE_URL}/api/analyze`
 
-If `NEXT_PUBLIC_API_BASE_URL` is empty, frontend falls back to same-origin `/api/analyze`.
+If `NEXT_PUBLIC_API_BASE_URL` is empty, frontend falls back to same-origin `/api/analyze` only on localhost.
+For GitHub Pages/static production, `NEXT_PUBLIC_API_BASE_URL` must be set at build time.
 
 Optional request header:
 
 ```txt
 x-gemini-api-key: <user key>
 ```
+
+Frontend behavior for user-provided key: kept in memory for the current tab session only (not persisted in `localStorage`).
 
 When present, backend should use the user key for Gemini analysis instead of the backend default Gemini key.
 
