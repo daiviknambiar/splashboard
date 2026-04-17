@@ -6,6 +6,7 @@ import { MoodBoard } from './components/MoodBoard';
 import { StealTheShot } from './components/StealTheShot';
 import { ResultsGrid } from './components/ResultsGrid';
 import { SplashAnimation } from './components/SplashAnimation';
+import { analyzeInput, AnalyzeApiError } from '@/lib/api';
 import { mergeAndRankResults } from '@/lib/ranker';
 import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
 import type { Mode, RankedPhoto, SearchStatus, UsageSummary, VisualDescriptors } from '@/types';
@@ -27,8 +28,8 @@ type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null 
 
 const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard';
 const DEFAULT_MONTHLY_LIMIT = 4;
-const API_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '/splashboard';
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const GEMINI_KEY_STORAGE_KEY = 'splashboard.gemini_api_key';
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -61,102 +62,6 @@ function formatMonth(monthKey: string): string {
   }).format(
     new Date(Date.UTC(yearNum, monthNum - 1, 1))
   );
-}
-
-function getMonthKey(date = new Date()): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-function getMonthlyLimit(): number {
-  const parsed = Number.parseInt(process.env.NEXT_PUBLIC_MONTHLY_ACTION_LIMIT ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_MONTHLY_LIMIT;
-  }
-  return parsed;
-}
-
-function toUsageSummary(used: number, limit: number, month: string, usingOwnApiKey = false): UsageSummary {
-  return {
-    month,
-    used,
-    limit,
-    remaining: Math.max(0, limit - used),
-    isLimited: used >= limit,
-    usingOwnApiKey,
-  };
-}
-
-function getDefaultUsageSummary(usingOwnApiKey = false): UsageSummary {
-  const month = getMonthKey();
-  const limit = getMonthlyLimit();
-  return toUsageSummary(0, limit, month, usingOwnApiKey);
-}
-
-interface AnalyzeApiResponse {
-  descriptors: VisualDescriptors;
-  usage?: UsageSummary;
-}
-
-class AnalyzeApiError extends Error {
-  usage?: UsageSummary;
-
-  constructor(message: string, usage?: UsageSummary) {
-    super(message);
-    this.name = 'AnalyzeApiError';
-    this.usage = usage;
-  }
-}
-
-async function analyzeWithApi(
-  payload: AnalyzePayload,
-  ownApiKey: string | undefined
-): Promise<AnalyzeApiResponse> {
-  const response = await fetch(`${API_BASE_PATH}/api/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...payload,
-      ...(ownApiKey ? { apiKey: ownApiKey } : {}),
-    }),
-  });
-
-  const responseData = (await response.json().catch(() => null)) as
-    | { descriptors?: VisualDescriptors; usage?: UsageSummary; error?: string }
-    | null;
-
-  if (!response.ok) {
-    throw new AnalyzeApiError(responseData?.error || 'Unable to analyze input.', responseData?.usage);
-  }
-
-  if (!responseData?.descriptors) {
-    throw new Error('Invalid analysis response from server.');
-  }
-
-  return {
-    descriptors: responseData.descriptors,
-    usage: responseData.usage,
-  };
-}
-
-async function fetchUsageSummary(): Promise<UsageSummary> {
-  const response = await fetch(`${API_BASE_PATH}/api/usage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-    cache: 'no-store',
-  });
-
-  const responseData = (await response.json().catch(() => null)) as
-    | { usage?: UsageSummary; error?: string }
-    | null;
-
-  if (!response.ok || !responseData?.usage) {
-    throw new Error(responseData?.error || 'Unable to load usage summary.');
-  }
-
-  return responseData.usage;
 }
 
 async function runUnsplashSearch(descriptors: VisualDescriptors, lens: Mode): Promise<RankedPhoto[]> {
@@ -439,12 +344,27 @@ export default function Home() {
   });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [showFreePlanNotice, setShowFreePlanNotice] = useState(false);
-  const [useOwnGeminiKey, setUseOwnGeminiKey] = useState(false);
-  const [ownGeminiKey, setOwnGeminiKey] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const hasUserGeminiKey = geminiApiKey.trim().length > 0;
+  const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserGeminiKey;
 
-  const hasOwnGeminiKey = ownGeminiKey.trim().length > 0;
-  const usingOwnGeminiKey = useOwnGeminiKey && hasOwnGeminiKey;
-  const freeTierBlocked = Boolean(usage?.isLimited) && !usingOwnGeminiKey;
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedKey = window.localStorage.getItem(GEMINI_KEY_STORAGE_KEY);
+    if (savedKey) {
+      setGeminiApiKey(savedKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const trimmed = geminiApiKey.trim();
+    if (trimmed.length > 0) {
+      window.localStorage.setItem(GEMINI_KEY_STORAGE_KEY, trimmed);
+      return;
+    }
+    window.localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
+  }, [geminiApiKey]);
 
   const runSearch = useCallback(
     async (targetMode: Mode, analyzePayload: AnalyzePayload) => {
@@ -453,13 +373,11 @@ export default function Home() {
           ...prev,
           [targetMode]: {
             status: 'error',
-            errorMsg: 'Free monthly limit reached. Add your own Gemini API key or use the GitHub setup guide.',
+            errorMsg: 'Free monthly limit reached. See the setup guide to run your own backend.',
           },
         }));
         return;
       }
-
-      const ownApiKey = ownGeminiKey.trim();
 
       setResultsByMode((prev) => ({
         ...prev,
@@ -478,16 +396,20 @@ export default function Home() {
       setSplashActive(true);
 
       try {
-        let analysis: AnalyzeApiResponse;
+        let analysis: { descriptors: VisualDescriptors; usage?: UsageSummary };
         if (analyzePayload.type === 'text') {
           const trimmed = analyzePayload.description.trim();
           if (trimmed.length < 3 || trimmed.length > 1000) {
             throw new Error('description must be 3–1000 characters');
           }
-          analysis = await analyzeWithApi(
-            { type: 'text', description: trimmed },
-            usingOwnGeminiKey ? ownApiKey : undefined
-          );
+          analysis = await analyzeInput({
+            input: trimmed,
+            context: {
+              type: 'text',
+              mode: targetMode,
+            },
+            geminiApiKey,
+          });
         } else {
           if (!analyzePayload.image || typeof analyzePayload.image !== 'string') {
             throw new Error('base64 image is required');
@@ -495,24 +417,23 @@ export default function Home() {
           if (!ALLOWED_IMAGE_TYPES.has(analyzePayload.mimeType)) {
             throw new Error('Unsupported image type');
           }
-          analysis = await analyzeWithApi(
-            {
+          analysis = await analyzeInput({
+            input: analyzePayload.image,
+            context: {
               type: 'image',
-              image: analyzePayload.image,
               mimeType: analyzePayload.mimeType,
+              mode: targetMode,
             },
-            usingOwnGeminiKey ? ownApiKey : undefined
-          );
+            geminiApiKey,
+          });
         }
         const descriptors = analysis.descriptors;
 
         if (analysis.usage) {
           setUsage(analysis.usage);
-          if (!analysis.usage.usingOwnApiKey && analysis.usage.used > 0) {
+          if (analysis.usage.used > 0) {
             setShowFreePlanNotice(true);
           }
-        } else if (usingOwnGeminiKey) {
-          setUsage(getDefaultUsageSummary(true));
         }
 
         setUiByMode((prev) => ({
@@ -545,7 +466,7 @@ export default function Home() {
       } catch (err) {
         if (err instanceof AnalyzeApiError && err.usage) {
           setUsage(err.usage);
-          if (!err.usage.usingOwnApiKey && err.usage.used > 0) {
+          if (err.usage.used > 0) {
             setShowFreePlanNotice(true);
           }
         }
@@ -560,29 +481,8 @@ export default function Home() {
         setSplashActive(false);
       }
     },
-    [freeTierBlocked, ownGeminiKey, usingOwnGeminiKey]
+    [freeTierBlocked, geminiApiKey]
   );
-
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      try {
-        const initialUsage = await fetchUsageSummary();
-        if (!active) return;
-        setUsage(initialUsage);
-        setShowFreePlanNotice(initialUsage.used > 0);
-      } catch {
-        if (!active) return;
-        setUsage(getDefaultUsageSummary(false));
-        setShowFreePlanNotice(false);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const handleMoodBoardSearch = useCallback(
     (description: string) => {
@@ -677,8 +577,9 @@ export default function Home() {
   const usageCopy = usage
     ? `Free plan: ${usage.limit} actions per month. ${usage.remaining} actions left for ${formatMonth(usage.month)}.`
     : `Free plan: ${DEFAULT_MONTHLY_LIMIT} actions per month.`;
-  const setupCopy =
-    'Use your own Gemini API key below, or set up Splashboard with your own Gemini and Unsplash credentials.';
+  const setupCopy = hasUserGeminiKey
+    ? 'Using your Gemini API key for analysis. Free-plan monthly limits are bypassed while your key is active.'
+    : 'AI analysis is now handled by your configured backend API service.';
 
   return (
     <>
@@ -713,6 +614,26 @@ export default function Home() {
                 </p>
                 <div className="quota-panel" aria-live="polite">
                   <p className="quota-panel__eyebrow">Free plan</p>
+                  <div className="quota-panel__key-entry">
+                    <label htmlFor="gemini-api-key" className="quota-panel__key-label">
+                      Gemini API key (optional)
+                    </label>
+                    <input
+                      id="gemini-api-key"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={geminiApiKey}
+                      onChange={(event) => setGeminiApiKey(event.target.value)}
+                      placeholder="AIza..."
+                      className="quota-panel__key-input"
+                    />
+                    <p className="quota-panel__key-note">
+                      {hasUserGeminiKey
+                        ? 'Stored locally in this browser and sent only to your configured backend on analyze requests.'
+                        : 'Add your key to continue when the free monthly limit is reached.'}
+                    </p>
+                  </div>
                   {showFreePlanNotice && (
                     <>
                       <p className="quota-panel__summary">{usageCopy}</p>
@@ -731,35 +652,9 @@ export default function Home() {
                     </>
                   )}
 
-                  <label className="byok-toggle">
-                    <input
-                      type="checkbox"
-                      checked={useOwnGeminiKey}
-                      onChange={(event) => setUseOwnGeminiKey(event.target.checked)}
-                    />
-                    <span>Use your own Gemini 2.5 Flash API key</span>
-                  </label>
-
-                  {useOwnGeminiKey && (
-                    <div className="byok-field">
-                      <input
-                        type="password"
-                        value={ownGeminiKey}
-                        onChange={(event) => setOwnGeminiKey(event.target.value)}
-                        placeholder="AIza..."
-                        className="byok-input"
-                        autoComplete="off"
-                      />
-                      <p className="byok-note">
-                        Your key is used only for this request and is never saved server-side.
-                      </p>
-                    </div>
-                  )}
-
                   {freeTierBlocked && (
                     <p className="quota-panel__alert">
-                      You have used all free actions for this month. Add your own Gemini API key or use the
-                      GitHub setup guide.
+                      You have used all free actions for this month. Try again next month or run your own backend.
                     </p>
                   )}
                 </div>

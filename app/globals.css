@@ -280,47 +280,37 @@ body {
   color: var(--text-muted);
 }
 
-.byok-toggle {
-  margin-top: 0.68rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.44rem;
-  font-size: 0.77rem;
-  color: var(--text);
-  cursor: pointer;
+.quota-panel__key-entry {
+  margin-top: 0.48rem;
 }
 
-.byok-toggle input {
-  accent-color: var(--accent);
+.quota-panel__key-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  margin-bottom: 0.26rem;
 }
 
-.byok-field {
-  margin-top: 0.52rem;
-}
-
-.byok-input {
+.quota-panel__key-input {
   width: 100%;
-  border: 1px solid color-mix(in srgb, var(--border), transparent 12%);
-  border-radius: 0.56rem;
-  background: color-mix(in srgb, var(--surface-strong), white 15%);
+  height: 2.1rem;
+  border-radius: 0.54rem;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 26%);
+  background: color-mix(in srgb, var(--surface), white 14%);
   color: var(--text);
   font-size: 0.78rem;
-  padding: 0.46rem 0.58rem;
+  padding: 0 0.62rem;
 }
 
-.byok-input::placeholder {
-  color: var(--text-subtle);
-}
-
-.byok-input:focus {
+.quota-panel__key-input:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent), white 18%);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring), transparent 20%);
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
-.byok-note {
-  margin: 0.32rem 0 0;
-  font-size: 0.69rem;
+.quota-panel__key-note {
+  margin: 0.36rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
   color: var(--text-subtle);
 }
 
