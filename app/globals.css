@@ -280,50 +280,6 @@ body {
   color: var(--text-muted);
 }
 
-.byok-toggle {
-  margin-top: 0.68rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.44rem;
-  font-size: 0.77rem;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.byok-toggle input {
-  accent-color: var(--accent);
-}
-
-.byok-field {
-  margin-top: 0.52rem;
-}
-
-.byok-input {
-  width: 100%;
-  border: 1px solid color-mix(in srgb, var(--border), transparent 12%);
-  border-radius: 0.56rem;
-  background: color-mix(in srgb, var(--surface-strong), white 15%);
-  color: var(--text);
-  font-size: 0.78rem;
-  padding: 0.46rem 0.58rem;
-}
-
-.byok-input::placeholder {
-  color: var(--text-subtle);
-}
-
-.byok-input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent), white 18%);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring), transparent 20%);
-}
-
-.byok-note {
-  margin: 0.32rem 0 0;
-  font-size: 0.69rem;
-  color: var(--text-subtle);
-}
-
 .quota-panel__alert {
   margin: 0.58rem 0 0;
   border: 1px solid #d59a93;
