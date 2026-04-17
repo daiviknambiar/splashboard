@@ -146,7 +146,7 @@ export function PhotoCard({
       )}
 
       {variant === 'shot' && showExif && !featured && (
-        <dl className="photo-card__meta-readout photo-card__meta-readout--hover" aria-label="Shot settings details">
+        <dl className="photo-card__meta-readout" aria-label="Shot settings details">
           <div className="photo-card__meta-readout-row">
             <dt>Camera</dt>
             <dd>{cameraName ?? 'Not published'}</dd>

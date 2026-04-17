@@ -7,13 +7,16 @@ Visual discovery tool powered by Gemini + Unsplash. Describe a vibe or upload a 
 Create `.env.local`:
 
 ```
-GEMINI_API_KEY=...
+NEXT_PUBLIC_GEMINI_API_KEY=...
 NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...
-NEXT_PUBLIC_CONTACT_EMAIL=you@example.com
 
 # Optional
-# NEXT_PUBLIC_GEMINI_API_KEY=... # fallback if GEMINI_API_KEY is not set
-# NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=15
+# GEMINI_API_KEY=... # preferred for server-only deployments
+# MONTHLY_ACTION_LIMIT=4
+# RATE_LIMIT_WINDOW_SECONDS=60
+# RATE_LIMIT_MAX_REQUESTS=8
+# NEXT_PUBLIC_BASE_PATH=/splashboard
+# GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ```bash
@@ -21,7 +24,8 @@ npm install
 npm run dev
 ```
 
-App runs at `http://localhost:3000`.
+App runs at `http://localhost:3000/splashboard`.
+`npm run dev` opens this URL automatically when possible.
 
 ### Stack
 
@@ -35,7 +39,7 @@ App runs at `http://localhost:3000`.
 ```
 Input (text or image)
   → Server Gemini call   → Extracts { locationType, lighting, palette, mood, framing, searchTerms }
-                         → free tier is tracked in localStorage (default 15 actions/month) unless user supplies their own Gemini key
+                         → server-enforced free tier (default 4 actions/month) + machine-level rate limiting
   → Browser Unsplash calls → 3 parallel queries, results merged + ranked
   → Results grid with masonry layout
   → Browser download trigger → Unsplash download endpoint called on photo interaction

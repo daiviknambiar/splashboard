@@ -25,14 +25,9 @@ type AnalyzePayload =
 type ModeResults = Record<Mode, { photos: RankedPhoto[]; descriptors: VisualDescriptors | null }>;
 type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null }>;
 
-interface StoredUsageState {
-  month: string;
-  used: number;
-}
-
-const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || 'daiviknambiarpro@gmail.com';
-const LOCAL_USAGE_KEY = 'splashboard:monthly-usage:v1';
-const DEFAULT_MONTHLY_LIMIT = 15;
+const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard';
+const DEFAULT_MONTHLY_LIMIT = 4;
+const API_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '/splashboard';
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 interface MoodCardLayoutItem {
@@ -93,71 +88,32 @@ function toUsageSummary(used: number, limit: number, month: string, usingOwnApiK
   };
 }
 
-function readStoredUsage(month: string): StoredUsageState {
-  if (typeof window === 'undefined') {
-    return { month, used: 0 };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LOCAL_USAGE_KEY);
-    if (!raw) {
-      return { month, used: 0 };
-    }
-
-    const parsed = JSON.parse(raw) as Partial<StoredUsageState>;
-    const parsedUsed = Number(parsed.used);
-    if (
-      typeof parsed.month === 'string' &&
-      parsed.month === month &&
-      Number.isFinite(parsedUsed) &&
-      parsedUsed >= 0
-    ) {
-      return { month: parsed.month, used: parsedUsed };
-    }
-  } catch {
-    // fall through to reset
-  }
-
-  return { month, used: 0 };
-}
-
-function writeStoredUsage(state: StoredUsageState): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(LOCAL_USAGE_KEY, JSON.stringify(state));
-}
-
-function getUsageSummaryFromStorage(usingOwnApiKey = false): UsageSummary {
+function getDefaultUsageSummary(usingOwnApiKey = false): UsageSummary {
   const month = getMonthKey();
   const limit = getMonthlyLimit();
-  const state = readStoredUsage(month);
-  return toUsageSummary(state.used, limit, month, usingOwnApiKey);
+  return toUsageSummary(0, limit, month, usingOwnApiKey);
 }
 
-function consumeMonthlyActionFromStorage(): { allowed: boolean; usage: UsageSummary } {
-  const month = getMonthKey();
-  const limit = getMonthlyLimit();
-  const state = readStoredUsage(month);
-  const nextUsed = Math.min(limit, state.used + 1);
+interface AnalyzeApiResponse {
+  descriptors: VisualDescriptors;
+  usage?: UsageSummary;
+}
 
-  if (state.used >= limit) {
-    return {
-      allowed: false,
-      usage: toUsageSummary(state.used, limit, month),
-    };
+class AnalyzeApiError extends Error {
+  usage?: UsageSummary;
+
+  constructor(message: string, usage?: UsageSummary) {
+    super(message);
+    this.name = 'AnalyzeApiError';
+    this.usage = usage;
   }
-
-  writeStoredUsage({ month, used: nextUsed });
-  return {
-    allowed: true,
-    usage: toUsageSummary(nextUsed, limit, month),
-  };
 }
 
 async function analyzeWithApi(
   payload: AnalyzePayload,
   ownApiKey: string | undefined
-): Promise<VisualDescriptors> {
-  const response = await fetch('/api/analyze', {
+): Promise<AnalyzeApiResponse> {
+  const response = await fetch(`${API_BASE_PATH}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -167,18 +123,40 @@ async function analyzeWithApi(
   });
 
   const responseData = (await response.json().catch(() => null)) as
-    | { descriptors?: VisualDescriptors; error?: string }
+    | { descriptors?: VisualDescriptors; usage?: UsageSummary; error?: string }
     | null;
 
   if (!response.ok) {
-    throw new Error(responseData?.error || 'Unable to analyze input.');
+    throw new AnalyzeApiError(responseData?.error || 'Unable to analyze input.', responseData?.usage);
   }
 
   if (!responseData?.descriptors) {
     throw new Error('Invalid analysis response from server.');
   }
 
-  return responseData.descriptors;
+  return {
+    descriptors: responseData.descriptors,
+    usage: responseData.usage,
+  };
+}
+
+async function fetchUsageSummary(): Promise<UsageSummary> {
+  const response = await fetch(`${API_BASE_PATH}/api/usage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+    cache: 'no-store',
+  });
+
+  const responseData = (await response.json().catch(() => null)) as
+    | { usage?: UsageSummary; error?: string }
+    | null;
+
+  if (!response.ok || !responseData?.usage) {
+    throw new Error(responseData?.error || 'Unable to load usage summary.');
+  }
+
+  return responseData.usage;
 }
 
 async function runUnsplashSearch(descriptors: VisualDescriptors, lens: Mode): Promise<RankedPhoto[]> {
@@ -460,6 +438,7 @@ export default function Home() {
     stealthisshot: { status: 'idle', errorMsg: null },
   });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [showFreePlanNotice, setShowFreePlanNotice] = useState(false);
   const [useOwnGeminiKey, setUseOwnGeminiKey] = useState(false);
   const [ownGeminiKey, setOwnGeminiKey] = useState('');
 
@@ -474,7 +453,7 @@ export default function Home() {
           ...prev,
           [targetMode]: {
             status: 'error',
-            errorMsg: 'Free monthly limit reached. Add your own Gemini key or contact for self-hosting.',
+            errorMsg: 'Free monthly limit reached. Add your own Gemini API key or use the GitHub setup guide.',
           },
         }));
         return;
@@ -499,26 +478,13 @@ export default function Home() {
       setSplashActive(true);
 
       try {
-        if (!usingOwnGeminiKey) {
-          const quota = consumeMonthlyActionFromStorage();
-          setUsage(quota.usage);
-
-          if (!quota.allowed) {
-            throw new Error(
-              `You have reached the free monthly limit (${quota.usage.limit} actions). Add your own Gemini API key or contact us for self-hosting.`
-            );
-          }
-        } else {
-          setUsage(getUsageSummaryFromStorage(true));
-        }
-
-        let descriptors: VisualDescriptors;
+        let analysis: AnalyzeApiResponse;
         if (analyzePayload.type === 'text') {
           const trimmed = analyzePayload.description.trim();
           if (trimmed.length < 3 || trimmed.length > 1000) {
             throw new Error('description must be 3–1000 characters');
           }
-          descriptors = await analyzeWithApi(
+          analysis = await analyzeWithApi(
             { type: 'text', description: trimmed },
             usingOwnGeminiKey ? ownApiKey : undefined
           );
@@ -529,7 +495,7 @@ export default function Home() {
           if (!ALLOWED_IMAGE_TYPES.has(analyzePayload.mimeType)) {
             throw new Error('Unsupported image type');
           }
-          descriptors = await analyzeWithApi(
+          analysis = await analyzeWithApi(
             {
               type: 'image',
               image: analyzePayload.image,
@@ -537,6 +503,16 @@ export default function Home() {
             },
             usingOwnGeminiKey ? ownApiKey : undefined
           );
+        }
+        const descriptors = analysis.descriptors;
+
+        if (analysis.usage) {
+          setUsage(analysis.usage);
+          if (!analysis.usage.usingOwnApiKey && analysis.usage.used > 0) {
+            setShowFreePlanNotice(true);
+          }
+        } else if (usingOwnGeminiKey) {
+          setUsage(getDefaultUsageSummary(true));
         }
 
         setUiByMode((prev) => ({
@@ -567,6 +543,12 @@ export default function Home() {
           setMoodBoardSaved(false);
         }
       } catch (err) {
+        if (err instanceof AnalyzeApiError && err.usage) {
+          setUsage(err.usage);
+          if (!err.usage.usingOwnApiKey && err.usage.used > 0) {
+            setShowFreePlanNotice(true);
+          }
+        }
         setUiByMode((prev) => ({
           ...prev,
           [targetMode]: {
@@ -582,7 +564,24 @@ export default function Home() {
   );
 
   useEffect(() => {
-    setUsage(getUsageSummaryFromStorage(false));
+    let active = true;
+
+    (async () => {
+      try {
+        const initialUsage = await fetchUsageSummary();
+        if (!active) return;
+        setUsage(initialUsage);
+        setShowFreePlanNotice(initialUsage.used > 0);
+      } catch {
+        if (!active) return;
+        setUsage(getDefaultUsageSummary(false));
+        setShowFreePlanNotice(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleMoodBoardSearch = useCallback(
@@ -676,12 +675,10 @@ export default function Home() {
       : null;
   const modeLabel = mode === 'moodboard' ? 'Mood Board' : 'Steal This Shot';
   const usageCopy = usage
-    ? `${usage.remaining} of ${usage.limit} free actions left for ${formatMonth(usage.month)}`
-    : 'Checking monthly free actions...';
-  const usageTag = usingOwnGeminiKey ? 'BYO key' : usage ? `${usage.remaining} left` : '...';
-  const contactHref = CONTACT_EMAIL
-    ? `mailto:${CONTACT_EMAIL}?subject=Splashboard%20Self-Hosting%20License`
-    : null;
+    ? `Free plan: ${usage.limit} actions per month. ${usage.remaining} actions left for ${formatMonth(usage.month)}.`
+    : `Free plan: ${DEFAULT_MONTHLY_LIMIT} actions per month.`;
+  const setupCopy =
+    'Use your own Gemini API key below, or set up Splashboard with your own Gemini and Unsplash credentials.';
 
   return (
     <>
@@ -702,7 +699,6 @@ export default function Home() {
             <div className="header-status">
               <span className="status-dot" data-active={isLoading ? 'true' : 'false'} />
               <span>{statusCopy}</span>
-              <span className="header-status__usage">{usageTag}</span>
             </div>
           </div>
         </header>
@@ -717,7 +713,23 @@ export default function Home() {
                 </p>
                 <div className="quota-panel" aria-live="polite">
                   <p className="quota-panel__eyebrow">Free plan</p>
-                  <p className="quota-panel__summary">{usageCopy}</p>
+                  {showFreePlanNotice && (
+                    <>
+                      <p className="quota-panel__summary">{usageCopy}</p>
+                      <p className="quota-panel__contact">
+                        {setupCopy}{' '}
+                        <a
+                          href={FREE_PLAN_SETUP_URL}
+                          className="footer-link"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View setup guide
+                        </a>
+                        .
+                      </p>
+                    </>
+                  )}
 
                   <label className="byok-toggle">
                     <input
@@ -746,19 +758,10 @@ export default function Home() {
 
                   {freeTierBlocked && (
                     <p className="quota-panel__alert">
-                      Free limit reached. Add your own key or contact for a self-hosting license.
+                      You have used all free actions for this month. Add your own Gemini API key or use the
+                      GitHub setup guide.
                     </p>
                   )}
-
-                  <p className="quota-panel__contact">
-                    {contactHref ? (
-                      <a href={contactHref} className="footer-link">
-                        Contact me to buy the code or set up self-hosting.
-                      </a>
-                    ) : (
-                      'email daiviknambiarpro@gmail.com'
-                    )}
-                  </p>
                 </div>
               </aside>
 
