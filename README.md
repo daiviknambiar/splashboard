@@ -4,7 +4,14 @@ Visual discovery tool powered by a backend AI API + Unsplash. Describe a vibe or
 
 ### Setup
 
-Create `.env.local`:
+Install dependencies:
+
+```bash
+npm install
+npm run backend:install
+```
+
+Configure frontend `.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
@@ -14,13 +21,24 @@ NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...
 # NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=4
 ```
 
+Configure backend env:
+
 ```bash
-npm install
+cp backend/.env.example backend/.env
+# then set GEMINI_API_KEY in backend/.env
+```
+
+Run backend and frontend in separate terminals:
+
+```bash
+npm run backend:dev
 npm run dev
 ```
 
 App runs at `http://localhost:3000/splashboard`.
 `npm run dev` opens this URL automatically when possible.
+
+Backend runs at `http://localhost:4000`.
 
 ### Stack
 
