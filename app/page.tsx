@@ -595,17 +595,19 @@ export default function Home() {
             <div className="studio-layout">
               <aside className="story-panel">
                 <h1 className="hero-title">Find matching visuals fast.</h1>
-                <div className="hero-concept-cloud" aria-hidden="true">
-                  {CONCEPT_TAGS.map(({ label, delay, variant }) => (
-                    <span
-                      key={label}
-                      className={`hero-concept-tag hero-concept-tag--${variant}`}
-                      style={{ animationDelay: delay }}
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
+                {!showFreePlanNotice && (
+                  <div className="hero-concept-cloud" aria-hidden="true">
+                    {CONCEPT_TAGS.map(({ label, delay, variant }) => (
+                      <span
+                        key={label}
+                        className={`hero-concept-tag hero-concept-tag--${variant}`}
+                        style={{ animationDelay: delay }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="hero-copy">
                   Type a mood or upload a photo to get similar shots and useful camera details.
                 </p>
