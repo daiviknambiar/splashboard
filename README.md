@@ -18,7 +18,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...
 
 # Optional
-# NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=4
+# NEXT_PUBLIC_MONTHLY_ACTION_LIMIT=4 (Limit how many actions per month) 
 ```
 
 Configure backend env:
