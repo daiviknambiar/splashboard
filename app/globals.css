@@ -331,6 +331,78 @@ body {
   color: var(--text-subtle);
 }
 
+.hero-concept-cloud {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 0.46rem 0.5rem;
+  padding: 1.1rem 0 0.6rem;
+  pointer-events: none;
+  user-select: none;
+  min-height: 0;
+}
+
+.hero-concept-tag {
+  border: 1px solid color-mix(in srgb, var(--border), transparent 32%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong), transparent 12%);
+  color: var(--text-subtle);
+  padding: 0.35rem 0.78rem;
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 0.71rem;
+  letter-spacing: 0.025em;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  animation-duration: 3.8s;
+}
+
+.hero-concept-tag--a {
+  animation-name: concept-float-a;
+  opacity: 0.78;
+}
+
+.hero-concept-tag--b {
+  animation-name: concept-float-b;
+  opacity: 0.6;
+  background: color-mix(in srgb, var(--accent-soft), transparent 30%);
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  color: var(--accent-strong);
+}
+
+.hero-concept-tag--c {
+  animation-name: concept-float-c;
+  opacity: 0.7;
+}
+
+.app-shell--shot .hero-concept-tag {
+  background: rgba(61, 97, 72, 0.15);
+  border-color: rgba(63, 92, 68, 0.45);
+  color: #9ab297;
+}
+
+.app-shell--shot .hero-concept-tag--b {
+  background: rgba(58, 157, 87, 0.1);
+  border-color: rgba(58, 157, 87, 0.28);
+  color: #7ac28e;
+}
+
+@keyframes concept-float-a {
+  from { transform: translateY(0px) rotate(-0.4deg); opacity: 0.65; }
+  to   { transform: translateY(-6px) rotate(0.3deg); opacity: 0.88; }
+}
+
+@keyframes concept-float-b {
+  from { transform: translateY(-4px) rotate(0.5deg); opacity: 0.5; }
+  to   { transform: translateY(5px) rotate(-0.3deg); opacity: 0.74; }
+}
+
+@keyframes concept-float-c {
+  from { transform: translateY(3px) rotate(-0.2deg); opacity: 0.72; }
+  to   { transform: translateY(-5px) rotate(0.4deg); opacity: 0.55; }
+}
+
 .hero-copy--subtle {
   margin-top: 0.7rem;
   font-size: 0.87rem;
@@ -1379,7 +1451,8 @@ body {
   .photo-card,
   .status-dot[data-active='true'],
   .splash-ring--active,
-  .splash-core--active {
+  .splash-core--active,
+  .hero-concept-tag {
     animation: none;
   }
 

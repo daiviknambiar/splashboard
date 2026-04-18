@@ -12,11 +12,11 @@ import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
 import type { Mode, RankedPhoto, SearchStatus, UsageSummary, VisualDescriptors } from '@/types';
 
 const STATUS_COPY: Record<SearchStatus, string | null> = {
-  idle: 'Idle',
+  idle: null,
   analyzing: 'Scanning the vibe...',
   searching: 'Pin-hunting...',
-  done: 'Fresh pulls ready',
-  error: 'Glitch',
+  done: null,
+  error: null,
 };
 
 type AnalyzePayload =
@@ -26,9 +26,19 @@ type AnalyzePayload =
 type ModeResults = Record<Mode, { photos: RankedPhoto[]; descriptors: VisualDescriptors | null }>;
 type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null }>;
 
-const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard';
+const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard/blob/main/README.md';
 const DEFAULT_MONTHLY_LIMIT = 4;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+const CONCEPT_TAGS: { label: string; delay: string; variant: 'a' | 'b' | 'c' }[] = [
+  { label: 'golden hour', delay: '0s', variant: 'a' },
+  { label: 'moody noir', delay: '-1.6s', variant: 'b' },
+  { label: 'soft morning fog', delay: '-3.1s', variant: 'c' },
+  { label: 'brutalist space', delay: '-0.9s', variant: 'b' },
+  { label: 'cinematic grain', delay: '-2.4s', variant: 'a' },
+  { label: 'earthy tones', delay: '-1.2s', variant: 'c' },
+  { label: 'hazy dusk', delay: '-3.7s', variant: 'a' },
+];
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -549,7 +559,6 @@ export default function Home() {
 
   const isLoading = activeUi.status === 'analyzing' || activeUi.status === 'searching';
   const inputsDisabled = isLoading || freeTierBlocked;
-  const statusCopy = STATUS_COPY[activeUi.status] ?? 'Idle';
   const loadingCopy =
     activeUi.status === 'analyzing' || activeUi.status === 'searching'
       ? STATUS_COPY[activeUi.status]
@@ -578,10 +587,6 @@ export default function Home() {
               <span className="wordmark-tag">creative arcade</span>
             </Link>
 
-            <div className="header-status">
-              <span className="status-dot" data-active={isLoading ? 'true' : 'false'} />
-              <span>{statusCopy}</span>
-            </div>
           </div>
         </header>
 
@@ -590,55 +595,63 @@ export default function Home() {
             <div className="studio-layout">
               <aside className="story-panel">
                 <h1 className="hero-title">Find matching visuals fast.</h1>
+                <div className="hero-concept-cloud" aria-hidden="true">
+                  {CONCEPT_TAGS.map(({ label, delay, variant }) => (
+                    <span
+                      key={label}
+                      className={`hero-concept-tag hero-concept-tag--${variant}`}
+                      style={{ animationDelay: delay }}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
                 <p className="hero-copy">
                   Type a mood or upload a photo to get similar shots and useful camera details.
                 </p>
-                <div className="quota-panel" aria-live="polite">
-                  <p className="quota-panel__eyebrow">Free plan</p>
-                  <div className="quota-panel__key-entry">
-                    <label htmlFor="gemini-api-key" className="quota-panel__key-label">
-                      Gemini API key (optional)
-                    </label>
-                    <input
-                      id="gemini-api-key"
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={geminiApiKey}
-                      onChange={(event) => setGeminiApiKey(event.target.value)}
-                      placeholder="AIza..."
-                      className="quota-panel__key-input"
-                    />
-                    <p className="quota-panel__key-note">
-                      {hasUserGeminiKey
-                        ? 'Kept only in this tab session and sent only to your configured backend on analyze requests.'
-                        : 'Add your key to continue when the free monthly limit is reached.'}
-                    </p>
-                  </div>
-                  {showFreePlanNotice && (
-                    <>
-                      <p className="quota-panel__summary">{usageCopy}</p>
-                      <p className="quota-panel__contact">
-                        {setupCopy}{' '}
-                        <a
-                          href={FREE_PLAN_SETUP_URL}
-                          className="footer-link"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          View setup guide
-                        </a>
-                        .
+                {showFreePlanNotice && (
+                  <div className="quota-panel" aria-live="polite">
+                    <p className="quota-panel__eyebrow">Free plan</p>
+                    <div className="quota-panel__key-entry">
+                      <label htmlFor="gemini-api-key" className="quota-panel__key-label">
+                        Gemini API key (optional)
+                      </label>
+                      <input
+                        id="gemini-api-key"
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={geminiApiKey}
+                        onChange={(event) => setGeminiApiKey(event.target.value)}
+                        placeholder="AIza..."
+                        className="quota-panel__key-input"
+                      />
+                      <p className="quota-panel__key-note">
+                        {hasUserGeminiKey
+                          ? 'Kept only in this tab session and sent only to your configured backend on analyze requests.'
+                          : 'Add your key to continue when the free monthly limit is reached.'}
                       </p>
-                    </>
-                  )}
-
-                  {freeTierBlocked && (
-                    <p className="quota-panel__alert">
-                      You have used all free actions for this month. Try again next month or run your own backend.
+                    </div>
+                    <p className="quota-panel__summary">{usageCopy}</p>
+                    <p className="quota-panel__contact">
+                      {setupCopy}{' '}
+                      <a
+                        href={FREE_PLAN_SETUP_URL}
+                        className="footer-link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View setup guide
+                      </a>
+                      .
                     </p>
-                  )}
-                </div>
+                    {freeTierBlocked && (
+                      <p className="quota-panel__alert">
+                        You have used all free actions for this month. Try again next month or run your own backend.
+                      </p>
+                    )}
+                  </div>
+                )}
               </aside>
 
               <div className="studio-stage">
