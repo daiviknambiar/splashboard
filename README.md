@@ -1,4 +1,4 @@
-## Splashboard
+## Splashboard (Unsplash powered creative tool) 
 
 Visual discovery tool powered by a backend AI API + Unsplash. Describe a vibe or upload a photo to get a curated grid of images that match mood, lighting, and composition.
 
