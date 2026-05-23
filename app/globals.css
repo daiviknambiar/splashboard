@@ -275,9 +275,14 @@ body {
 
 .quota-panel__summary {
   margin: 0.34rem 0 0;
-  font-size: 0.81rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  line-height: 1.55;
   color: var(--text-muted);
+}
+
+.quota-panel__summary strong {
+  color: var(--text);
+  font-weight: 650;
 }
 
 .quota-panel__key-entry {
@@ -321,13 +326,14 @@ body {
   background: #f6d7d3;
   color: #7f241c;
   font-size: 0.74rem;
-  line-height: 1.4;
+  line-height: 1.5;
   padding: 0.44rem 0.54rem;
 }
 
 .quota-panel__contact {
   margin: 0.64rem 0 0;
   font-size: 0.72rem;
+  line-height: 1.48;
   color: var(--text-subtle);
 }
 
