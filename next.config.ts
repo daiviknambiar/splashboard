@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // to comply with Unsplash's no-proxying requirement.
   // No image domain config needed.
   experimental: {},
+  turbopack: {
+    root: process.cwd(),
+  },
   output: "export",
   basePath: "/splashboard",
   assetPrefix: "/splashboard/",
