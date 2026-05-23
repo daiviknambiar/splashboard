@@ -27,6 +27,7 @@ type ModeResults = Record<Mode, { photos: RankedPhoto[]; descriptors: VisualDesc
 type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null }>;
 
 const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard/blob/main/README.md';
+const USAGE_STORAGE_KEY = 'splashboard.usage.v1';
 const DEFAULT_MONTHLY_LIMIT = 4;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
@@ -53,6 +54,85 @@ interface MoodCardLayoutItem {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function currentUtcMonthKey(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function isUsageSummary(value: unknown): value is UsageSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const maybe = value as Partial<UsageSummary>;
+  return (
+    typeof maybe.month === 'string' &&
+    typeof maybe.used === 'number' &&
+    Number.isFinite(maybe.used) &&
+    typeof maybe.limit === 'number' &&
+    Number.isFinite(maybe.limit) &&
+    typeof maybe.remaining === 'number' &&
+    Number.isFinite(maybe.remaining) &&
+    typeof maybe.isLimited === 'boolean'
+  );
+}
+
+function readStoredUsageNotice(): { usage: UsageSummary | null; showFreePlanNotice: boolean } {
+  if (typeof window === 'undefined') {
+    return { usage: null, showFreePlanNotice: false };
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(USAGE_STORAGE_KEY);
+    if (!rawValue) {
+      return { usage: null, showFreePlanNotice: false };
+    }
+
+    const parsed = JSON.parse(rawValue) as unknown;
+    const storedUsage = isUsageSummary(parsed)
+      ? parsed
+      : parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'usage' in parsed
+        ? (parsed as { usage?: unknown }).usage
+        : null;
+    const hasStoredUsage = isUsageSummary(storedUsage);
+    const usage = hasStoredUsage && storedUsage.month === currentUtcMonthKey() ? storedUsage : null;
+    const storedNoticeFlag =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Boolean((parsed as { showFreePlanNotice?: unknown }).showFreePlanNotice)
+        : false;
+
+    if (hasStoredUsage && !usage) {
+      window.localStorage.setItem(
+        USAGE_STORAGE_KEY,
+        JSON.stringify({ showFreePlanNotice: storedNoticeFlag })
+      );
+    }
+
+    return {
+      usage,
+      showFreePlanNotice: storedNoticeFlag || Boolean(usage && usage.used > 0),
+    };
+  } catch {
+    return { usage: null, showFreePlanNotice: false };
+  }
+}
+
+function persistUsageNotice(usage: UsageSummary, showFreePlanNotice: boolean) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const stored = readStoredUsageNotice();
+    window.localStorage.setItem(
+      USAGE_STORAGE_KEY,
+      JSON.stringify({
+        usage,
+        showFreePlanNotice: showFreePlanNotice || stored.showFreePlanNotice,
+      })
+    );
+  } catch {
+    // Storage may be unavailable in private or locked-down browsing contexts.
+  }
 }
 
 function formatMonth(monthKey: string): string {
@@ -357,14 +437,29 @@ export default function Home() {
   const hasUserGeminiKey = geminiApiKey.trim().length > 0;
   const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserGeminiKey;
 
+  useEffect(() => {
+    const stored = readStoredUsageNotice();
+
+    if (stored.usage) {
+      setUsage(stored.usage);
+    }
+
+    if (stored.showFreePlanNotice) {
+      setShowFreePlanNotice(true);
+    }
+  }, []);
+
   const runSearch = useCallback(
     async (targetMode: Mode, analyzePayload: AnalyzePayload) => {
       if (freeTierBlocked) {
+        const resetMonth = usage ? formatMonth(usage.month) : 'the next month';
         setUiByMode((prev) => ({
           ...prev,
           [targetMode]: {
             status: 'error',
-            errorMsg: 'Free monthly limit reached. See the setup guide to run your own backend.',
+            errorMsg: usage
+              ? `You've used all ${usage.limit} free actions for ${resetMonth}. Use your Gemini API key or run your own copy to continue.`
+              : 'Free monthly limit reached. Use your Gemini API key or run your own copy to continue.',
           },
         }));
         return;
@@ -423,7 +518,10 @@ export default function Home() {
         if (analysis.usage) {
           setUsage(analysis.usage);
           if (analysis.usage.used > 0) {
+            persistUsageNotice(analysis.usage, true);
             setShowFreePlanNotice(true);
+          } else {
+            persistUsageNotice(analysis.usage, false);
           }
         }
 
@@ -458,7 +556,10 @@ export default function Home() {
         if (err instanceof AnalyzeApiError && err.usage) {
           setUsage(err.usage);
           if (err.usage.used > 0) {
+            persistUsageNotice(err.usage, true);
             setShowFreePlanNotice(true);
+          } else {
+            persistUsageNotice(err.usage, false);
           }
         }
         setUiByMode((prev) => ({
@@ -472,7 +573,7 @@ export default function Home() {
         setSplashActive(false);
       }
     },
-    [freeTierBlocked, geminiApiKey]
+    [freeTierBlocked, geminiApiKey, usage]
   );
 
   const handleMoodBoardSearch = useCallback(
@@ -564,12 +665,27 @@ export default function Home() {
       ? STATUS_COPY[activeUi.status]
       : null;
   const modeLabel = mode === 'moodboard' ? 'Mood Board' : 'Steal This Shot';
-  const usageCopy = usage
-    ? `Free plan: ${usage.limit} actions per month. ${usage.remaining} actions left for ${formatMonth(usage.month)}.`
-    : `Free plan: ${DEFAULT_MONTHLY_LIMIT} actions per month.`;
+  const usageMonthLabel = usage ? formatMonth(usage.month) : null;
+  const usageLimit = usage?.limit ?? DEFAULT_MONTHLY_LIMIT;
+  const usageCopy = usage ? (
+    <>
+      You are on the free plan - that is <strong>{usageLimit} actions per month</strong>. You have{' '}
+      <strong>
+        {usage.remaining} left for {usageMonthLabel}
+      </strong>
+      .
+    </>
+  ) : (
+    <>
+      You are on the free plan - that is <strong>{usageLimit} actions per month</strong>.
+    </>
+  );
   const setupCopy = hasUserGeminiKey
     ? 'Using your Gemini API key for analysis. Free-plan monthly limits are bypassed while your key is active.'
-    : 'AI analysis is now handled by your configured backend API service.';
+    : 'Want unlimited use? Splashboard is open source - clone the repo and run it locally with your own Gemini and Unsplash API keys. Setup takes a few minutes.';
+  const blockedCopy = usage
+    ? `You've used all ${usage.limit} free actions for ${formatMonth(usage.month)}. They'll reset on the 1st of next month - or you can run your own copy any time with the setup guide below.`
+    : `You've used all free actions for this month. They'll reset on the 1st of next month - or you can run your own copy any time with the setup guide below.`;
 
   return (
     <>
@@ -649,7 +765,7 @@ export default function Home() {
                     </p>
                     {freeTierBlocked && (
                       <p className="quota-panel__alert">
-                        You have used all free actions for this month. Try again next month or run your own backend.
+                        {blockedCopy}
                       </p>
                     )}
                   </div>
