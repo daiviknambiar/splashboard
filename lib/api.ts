@@ -2,6 +2,7 @@ import type { UsageSummary, VisualDescriptors } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? '';
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const ANALYZE_TIMEOUT_MS = 25000;
 
 interface BackendAnalyzeResponse {
   output: string | null;
@@ -49,6 +50,28 @@ function buildApiUrl(pathname: string): string {
   throw new Error(
     'Missing NEXT_PUBLIC_API_BASE_URL. Set it to your backend origin for non-local deployments.'
   );
+}
+
+function getCurrentOrigin(): string {
+  if (typeof window === 'undefined') {
+    return 'this origin';
+  }
+  return window.location.origin;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function buildNetworkErrorMessage(error: unknown): string {
+  const backendLabel = API_BASE_URL || '(unset)';
+  if (isAbortError(error)) {
+    return `The backend at ${backendLabel} did not respond within ${Math.round(
+      ANALYZE_TIMEOUT_MS / 1000
+    )} seconds. It may be waking up or unavailable.`;
+  }
+
+  return `Could not reach the backend at ${backendLabel}. Check that it is online and that CORS allows ${getCurrentOrigin()}.`;
 }
 
 function cleanJsonText(value: string): string {
@@ -146,15 +169,27 @@ export async function analyzeInput(payload: AnalyzeRequestPayload): Promise<Anal
     headers['x-gemini-api-key'] = userGeminiKey;
   }
 
-  const response = await fetch(buildApiUrl('/api/analyze'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      input,
-      context: payload.context,
-    }),
-    cache: 'no-store',
-  });
+  const apiUrl = buildApiUrl('/api/analyze');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        input,
+        context: payload.context,
+      }),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new AnalyzeApiError(buildNetworkErrorMessage(error), 0, null);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const responseData = parseBackendResponse(await response.json().catch(() => null));
   const meta = responseData?.meta ?? null;

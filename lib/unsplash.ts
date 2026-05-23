@@ -29,6 +29,7 @@ export async function searchPhotos(
     query,
     per_page: String(perPage),
     order_by: 'relevant',
+    content_filter: 'high',
   });
 
   const res = await fetch(`${UNSPLASH_BASE}/search/photos?${params}`, {
