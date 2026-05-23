@@ -47,3 +47,4 @@ next-env.d.ts
 # local agent instruction files
 AGENTS.md
 CLAUDE.md
+implementation-notes.html

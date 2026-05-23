@@ -1,19 +1,5 @@
 import { UnsplashPhoto, RankedPhoto, VisualDescriptors } from '@/types';
 
-function hexToRgb(hex: string): [number, number, number] | null {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
-}
-
-function colorDistance(a: string, b: string): number {
-  const ra = hexToRgb(a);
-  const rb = hexToRgb(b);
-  if (!ra || !rb) return 441; // max possible RGB distance
-  return Math.sqrt(
-    (ra[0] - rb[0]) ** 2 + (ra[1] - rb[1]) ** 2 + (ra[2] - rb[2]) ** 2
-  );
-}
-
 function descriptorKeywords(d: VisualDescriptors): string[] {
   const fields = [
     d.locationType,
