@@ -21,6 +21,9 @@
 # production
 /build
 
+# backend SQLite cache
+/backend/data/
+
 # misc
 .DS_Store
 *.pem

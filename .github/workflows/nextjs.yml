@@ -42,7 +42,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: ${{ steps.detect-package-manager.outputs.manager }}
 
       - name: Setup Pages
@@ -62,10 +62,9 @@ jobs:
 
       - name: Build with Next.js
         env:
+          # The only build-time variable the frontend needs: the deployed
+          # backend origin. All API keys live on the backend now.
           NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || secrets.NEXT_PUBLIC_API_BASE_URL }}
-          NEXT_PUBLIC_UNSPLASH_ACCESS_KEY: ${{ secrets.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY || secrets.UNSPLASH_ACCESS_KEY }}
-          NEXT_PUBLIC_CONTACT_EMAIL: ${{ vars.NEXT_PUBLIC_CONTACT_EMAIL }}
-          NEXT_PUBLIC_MONTHLY_ACTION_LIMIT: ${{ vars.NEXT_PUBLIC_MONTHLY_ACTION_LIMIT }}
         run: ${{ steps.detect-package-manager.outputs.runner }} next build
 
       - name: Upload artifact

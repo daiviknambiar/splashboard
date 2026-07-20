@@ -3,43 +3,108 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { MoodBoard } from './components/MoodBoard';
-import { StealTheShot } from './components/StealTheShot';
+import { StealTheShot, type ShotSearchPayload } from './components/StealTheShot';
+import { ProfileExplorer } from './components/ProfileExplorer';
 import { ResultsGrid } from './components/ResultsGrid';
 import { SplashAnimation } from './components/SplashAnimation';
-import { analyzeInput, AnalyzeApiError } from '@/lib/api';
-import { mergeAndRankResults } from '@/lib/ranker';
-import { getPhotoDetails, searchPhotos } from '@/lib/unsplash';
+import { visualSearch, similarSearch, fetchUsage, ApiError, type SearchResult } from '@/lib/api';
 import type { Mode, RankedPhoto, SearchStatus, UsageSummary, VisualDescriptors } from '@/types';
+import { PhotoCard } from './components/PhotoCard';
+import { triggerDownload } from '@/lib/unsplash';
+import sampleBoardData from './data/sample-board.json';
+import sampleShotData from './data/sample-shot.json';
+import sampleProfileData from './data/sample-profile.json';
 
-const STATUS_COPY: Record<SearchStatus, string | null> = {
-  idle: null,
-  analyzing: 'Scanning the vibe...',
-  searching: 'Pin-hunting...',
-  done: null,
-  error: null,
+const SAMPLE_PROMPT = 'quiet misty mornings on the coast, soft fog, muted blues';
+const SAMPLE_PHOTOS = sampleBoardData as RankedPhoto[];
+const SAMPLE_SHOT = sampleShotData as {
+  focus: string;
+  reference: RankedPhoto;
+  photos: RankedPhoto[];
+};
+const SAMPLE_PROFILE = sampleProfileData as {
+  user: { username: string; name: string; location?: string | null; total_photos?: number; profile_image?: { medium: string } };
+  clusters: Array<{ label: string; count: number }>;
+  facets: {
+    dateHistogram: Array<{ month: string; count: number }>;
+    topLocations: Array<{ name: string; count: number }>;
+    enrichedCount: number;
+    totalIndexed: number;
+  };
+  totalMatches: number;
+  photos: RankedPhoto[];
 };
 
-type AnalyzePayload =
-  | { type: 'text'; description: string }
-  | { type: 'image'; image: string; mimeType: string };
+function shortMonth(month: string): string {
+  const [year, m] = month.split('-').map((v) => Number.parseInt(v, 10));
+  if (!Number.isFinite(year) || !Number.isFinite(m)) return month;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(year, m - 1, 1))
+  );
+}
+const REPO_URL = 'https://github.com/daiviknambiar/splashboard';
 
-type ModeResults = Record<Mode, { photos: RankedPhoto[]; descriptors: VisualDescriptors | null }>;
-type ModeUiState = Record<Mode, { status: SearchStatus; errorMsg: string | null }>;
+// Idealized numbers for the decorative Profile Explorer home card — meant to
+// convey what the tool does at scale, not Towner's literal (small) sample.
+const PROFILE_SHOWCASE = {
+  totalPhotos: '1,204',
+  askNote: '\u2192 23 matches from 1,204 photos, found instantly',
+  clusters: [
+    { label: 'Misty Coastlines', count: 214 },
+    { label: 'Alpine Peaks', count: 187 },
+    { label: 'Iceland Roads', count: 121 },
+    { label: 'Parisian Streets', count: 98 },
+    { label: 'Night Skies', count: 64 },
+  ],
+  places: [
+    { label: 'Iceland', count: 176 },
+    { label: 'Dolomites', count: 143 },
+    { label: 'Paris', count: 98 },
+  ],
+  histogram: [18, 34, 52, 41, 88, 63, 120, 96, 74, 132, 108, 86, 140, 152],
+};
 
-const FREE_PLAN_SETUP_URL = 'https://github.com/daiviknambiar/splashboard/blob/main/README.md';
-const USAGE_STORAGE_KEY = 'splashboard.usage.v1';
-const DEFAULT_MONTHLY_LIMIT = 4;
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+type ViewMode = Mode | 'home';
 
-const CONCEPT_TAGS: { label: string; delay: string; variant: 'a' | 'b' | 'c' }[] = [
-  { label: 'golden hour', delay: '0s', variant: 'a' },
-  { label: 'moody noir', delay: '-1.6s', variant: 'b' },
-  { label: 'soft morning fog', delay: '-3.1s', variant: 'c' },
-  { label: 'brutalist space', delay: '-0.9s', variant: 'b' },
-  { label: 'cinematic grain', delay: '-2.4s', variant: 'a' },
-  { label: 'earthy tones', delay: '-1.2s', variant: 'c' },
-  { label: 'hazy dusk', delay: '-3.7s', variant: 'a' },
+const HOW_IT_WORKS: { step: string; title: string; copy: string }[] = [
+  { step: '1', title: 'Describe or drop', copy: 'A vibe in words, a reference photo, or a photographer’s profile.' },
+  { step: '2', title: 'AI plans the search', copy: 'Your input becomes targeted Unsplash queries with color and framing filters.' },
+  { step: '3', title: 'Curated results', copy: 'A ranked board with camera settings, topics, and places to dig into.' },
 ];
+
+type SearchMode = 'moodboard' | 'stealthisshot';
+
+type ModeResults = Record<SearchMode, { photos: RankedPhoto[]; descriptors: VisualDescriptors | null }>;
+type ModeUiState = Record<SearchMode, { status: SearchStatus; errorMsg: string | null }>;
+
+const DEFAULT_MONTHLY_LIMIT = 4;
+
+const HOME_META = {
+  label: 'Overview',
+  tag: 'Three tools',
+  explainer:
+    'Three AI-powered ways to search Unsplash: pin a mood board from words, reverse-engineer any shot, or deep-search a photographer\u2019s entire portfolio.',
+};
+
+const MODE_META: Record<Mode, { label: string; tag: string; explainer: string }> = {
+  moodboard: {
+    label: 'Mood Board',
+    tag: 'Words to wall',
+    explainer: 'Describe a vibe in plain words. AI turns it into targeted Unsplash searches and pins a board.',
+  },
+  stealthisshot: {
+    label: 'Steal This Shot',
+    tag: 'Reference to recipe',
+    explainer:
+      'Drop a photo or paste an Unsplash link. Get lookalikes plus the camera settings that made them.',
+  },
+  profile: {
+    label: 'Profile Explorer',
+    tag: 'Portfolio X-ray',
+    explainer:
+      'Point at any photographer — even one with thousands of photos — and ask for exactly what you need in plain words. Splashboard indexes the whole portfolio into searchable topics, dates, and places.',
+  },
+};
 
 interface MoodCardLayoutItem {
   photo: RankedPhoto;
@@ -56,85 +121,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function currentUtcMonthKey(): string {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-function isUsageSummary(value: unknown): value is UsageSummary {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const maybe = value as Partial<UsageSummary>;
-  return (
-    typeof maybe.month === 'string' &&
-    typeof maybe.used === 'number' &&
-    Number.isFinite(maybe.used) &&
-    typeof maybe.limit === 'number' &&
-    Number.isFinite(maybe.limit) &&
-    typeof maybe.remaining === 'number' &&
-    Number.isFinite(maybe.remaining) &&
-    typeof maybe.isLimited === 'boolean'
-  );
-}
-
-function readStoredUsageNotice(): { usage: UsageSummary | null; showFreePlanNotice: boolean } {
-  if (typeof window === 'undefined') {
-    return { usage: null, showFreePlanNotice: false };
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(USAGE_STORAGE_KEY);
-    if (!rawValue) {
-      return { usage: null, showFreePlanNotice: false };
-    }
-
-    const parsed = JSON.parse(rawValue) as unknown;
-    const storedUsage = isUsageSummary(parsed)
-      ? parsed
-      : parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'usage' in parsed
-        ? (parsed as { usage?: unknown }).usage
-        : null;
-    const hasStoredUsage = isUsageSummary(storedUsage);
-    const usage = hasStoredUsage && storedUsage.month === currentUtcMonthKey() ? storedUsage : null;
-    const storedNoticeFlag =
-      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? Boolean((parsed as { showFreePlanNotice?: unknown }).showFreePlanNotice)
-        : false;
-
-    if (hasStoredUsage && !usage) {
-      window.localStorage.setItem(
-        USAGE_STORAGE_KEY,
-        JSON.stringify({ showFreePlanNotice: storedNoticeFlag })
-      );
-    }
-
-    return {
-      usage,
-      showFreePlanNotice: storedNoticeFlag || Boolean(usage && usage.used > 0),
-    };
-  } catch {
-    return { usage: null, showFreePlanNotice: false };
-  }
-}
-
-function persistUsageNotice(usage: UsageSummary, showFreePlanNotice: boolean) {
-  if (typeof window === 'undefined') return;
-
-  try {
-    const stored = readStoredUsageNotice();
-    window.localStorage.setItem(
-      USAGE_STORAGE_KEY,
-      JSON.stringify({
-        usage,
-        showFreePlanNotice: showFreePlanNotice || stored.showFreePlanNotice,
-      })
-    );
-  } catch {
-    // Storage may be unavailable in private or locked-down browsing contexts.
-  }
-}
-
 function formatMonth(monthKey: string): string {
   const [year, month] = monthKey.split('-');
   const yearNum = Number.parseInt(year, 10);
@@ -148,66 +134,7 @@ function formatMonth(monthKey: string): string {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
-  }).format(
-    new Date(Date.UTC(yearNum, monthNum - 1, 1))
-  );
-}
-
-async function runUnsplashSearch(descriptors: VisualDescriptors, lens: Mode): Promise<RankedPhoto[]> {
-  const queries = [
-    `${descriptors.locationType} ${descriptors.lightingConditions}`.trim(),
-    descriptors.searchTerms[0] ?? `${descriptors.mood} ${descriptors.colorPalette}`.trim(),
-    descriptors.searchTerms[1] ?? `${descriptors.framing} ${descriptors.locationType}`.trim(),
-  ]
-    .filter((query): query is string => query.trim().length > 0)
-    .slice(0, 3);
-
-  const batches = await Promise.all(
-    queries.map(async (query, index) => {
-      try {
-        const photos = await searchPhotos(query, 10);
-        return { photos, queryIndex: index };
-      } catch (err) {
-        console.warn(`[unsplash] query ${index} failed:`, err);
-        return { photos: [], queryIndex: index };
-      }
-    })
-  );
-
-  const ranked = mergeAndRankResults(batches, descriptors);
-  const topResults = ranked.slice(0, 24);
-
-  if (lens !== 'stealthisshot') {
-    return topResults;
-  }
-
-  return Promise.all(
-    topResults.map(async (photo) => {
-      const hasExif =
-        photo.exif &&
-        (photo.exif.make ||
-          photo.exif.model ||
-          photo.exif.focal_length ||
-          photo.exif.aperture ||
-          photo.exif.exposure_time ||
-          photo.exif.iso);
-      if (hasExif) {
-        return photo;
-      }
-
-      try {
-        const details = await getPhotoDetails(photo.id);
-        return {
-          ...photo,
-          ...details,
-          score: photo.score,
-        };
-      } catch (err) {
-        console.warn(`[unsplash] details fetch failed for ${photo.id}:`, err);
-        return photo;
-      }
-    })
-  );
+  }).format(new Date(Date.UTC(yearNum, monthNum - 1, 1)));
 }
 
 function loadImageForCanvas(url: string): Promise<HTMLImageElement> {
@@ -418,7 +345,40 @@ async function exportMoodBoardImage(photos: RankedPhoto[]) {
 }
 
 export default function Home() {
-  const [mode, setMode] = useState<Mode>('moodboard');
+  const [mode, setMode] = useState<ViewMode>('home');
+
+  // URL hash <-> tool sync: deep-linkable tools, working back/forward.
+  useEffect(() => {
+    const HASH_TO_MODE: Record<string, ViewMode> = {
+      '#moodboard': 'moodboard',
+      '#shot': 'stealthisshot',
+      '#profile': 'profile',
+    };
+    const sync = () => setMode(HASH_TO_MODE[window.location.hash] ?? 'home');
+    sync();
+    window.addEventListener('hashchange', sync);
+    window.addEventListener('popstate', sync);
+    return () => {
+      window.removeEventListener('hashchange', sync);
+      window.removeEventListener('popstate', sync);
+    };
+  }, []);
+
+  const goTo = useCallback((next: ViewMode) => {
+    const MODE_TO_HASH: Record<string, string> = {
+      moodboard: '#moodboard',
+      stealthisshot: '#shot',
+      profile: '#profile',
+    };
+    if (next === 'home') {
+      window.history.pushState(null, '', window.location.pathname + window.location.search);
+    } else {
+      window.location.hash = MODE_TO_HASH[next];
+    }
+    setMode(next);
+  }, []);
+  const [shotPrefill, setShotPrefill] = useState<{ photoUrl?: string; focus?: string } | null>(null);
+  const [profileAutoOpen, setProfileAutoOpen] = useState<string | undefined>(undefined);
   const [splashActive, setSplashActive] = useState(false);
   const [moodBoardInput, setMoodBoardInput] = useState('');
   const [moodBoardSaved, setMoodBoardSaved] = useState(true);
@@ -433,33 +393,36 @@ export default function Home() {
   });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [showFreePlanNotice, setShowFreePlanNotice] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const hasUserGeminiKey = geminiApiKey.trim().length > 0;
-  const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserGeminiKey;
+  const [userApiKey, setUserApiKey] = useState('');
+  const hasUserKey = userApiKey.trim().length > 0;
+  const freeTierBlocked = Boolean(usage?.isLimited) && !hasUserKey;
 
-  useEffect(() => {
-    const stored = readStoredUsageNotice();
-
-    if (stored.usage) {
-      setUsage(stored.usage);
-    }
-
-    if (stored.showFreePlanNotice) {
+  const noteUsage = useCallback((next: UsageSummary) => {
+    setUsage(next);
+    if (next.isLimited) {
       setShowFreePlanNotice(true);
     }
   }, []);
 
+  // Load this visitor's remaining free runs on arrival (costs nothing).
+  useEffect(() => {
+    let cancelled = false;
+    fetchUsage().then((initial) => {
+      if (initial && !cancelled) setUsage(initial);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const runSearch = useCallback(
-    async (targetMode: Mode, analyzePayload: AnalyzePayload) => {
+    async (targetMode: SearchMode, run: () => Promise<SearchResult>) => {
       if (freeTierBlocked) {
-        const resetMonth = usage ? formatMonth(usage.month) : 'the next month';
         setUiByMode((prev) => ({
           ...prev,
           [targetMode]: {
             status: 'error',
-            errorMsg: usage
-              ? `You've used all ${usage.limit} free actions for ${resetMonth}. Use your Gemini API key or run your own copy to continue.`
-              : 'Free monthly limit reached. Use your Gemini API key or run your own copy to continue.',
+            errorMsg: 'Free monthly limit reached. See the setup guide to run your own backend.',
           },
         }));
         return;
@@ -467,101 +430,32 @@ export default function Home() {
 
       setResultsByMode((prev) => ({
         ...prev,
-        [targetMode]: {
-          photos: [],
-          descriptors: null,
-        },
+        [targetMode]: { photos: [], descriptors: null },
       }));
       setUiByMode((prev) => ({
         ...prev,
-        [targetMode]: {
-          status: 'analyzing',
-          errorMsg: null,
-        },
+        [targetMode]: { status: 'analyzing', errorMsg: null },
       }));
       setSplashActive(true);
 
       try {
-        let analysis: { descriptors: VisualDescriptors; usage?: UsageSummary };
-        if (analyzePayload.type === 'text') {
-          const trimmed = analyzePayload.description.trim();
-          if (trimmed.length < 3 || trimmed.length > 1000) {
-            throw new Error('description must be 3–1000 characters');
-          }
-          analysis = await analyzeInput({
-            input: trimmed,
-            context: {
-              type: 'text',
-              mode: targetMode,
-            },
-            geminiApiKey,
-          });
-        } else {
-          if (!analyzePayload.image || typeof analyzePayload.image !== 'string') {
-            throw new Error('base64 image is required');
-          }
-          if (!ALLOWED_IMAGE_TYPES.has(analyzePayload.mimeType)) {
-            throw new Error('Unsupported image type');
-          }
-          analysis = await analyzeInput({
-            input: analyzePayload.image,
-            context: {
-              type: 'image',
-              mimeType: analyzePayload.mimeType,
-              mode: targetMode,
-            },
-            geminiApiKey,
-          });
-        }
-        const descriptors = analysis.descriptors;
+        const result = await run();
+        if (result.usage) noteUsage(result.usage);
 
-        if (analysis.usage) {
-          setUsage(analysis.usage);
-          if (analysis.usage.used > 0) {
-            persistUsageNotice(analysis.usage, true);
-            setShowFreePlanNotice(true);
-          } else {
-            persistUsageNotice(analysis.usage, false);
-          }
-        }
-
-        setUiByMode((prev) => ({
-          ...prev,
-          [targetMode]: {
-            status: 'searching',
-            errorMsg: null,
-          },
-        }));
-
-        const photos = await runUnsplashSearch(descriptors, targetMode);
         setResultsByMode((prev) => ({
           ...prev,
-          [targetMode]: {
-            photos,
-            descriptors,
-          },
+          [targetMode]: { photos: result.photos, descriptors: result.descriptors },
         }));
         setUiByMode((prev) => ({
           ...prev,
-          [targetMode]: {
-            status: 'done',
-            errorMsg: null,
-          },
+          [targetMode]: { status: 'done', errorMsg: null },
         }));
 
         if (targetMode === 'moodboard') {
           setMoodBoardSaved(false);
         }
       } catch (err) {
-        if (err instanceof AnalyzeApiError && err.usage) {
-          setUsage(err.usage);
-          if (err.usage.used > 0) {
-            persistUsageNotice(err.usage, true);
-            setShowFreePlanNotice(true);
-          } else {
-            persistUsageNotice(err.usage, false);
-          }
-        }
+        if (err instanceof ApiError && err.usage) noteUsage(err.usage);
         setUiByMode((prev) => ({
           ...prev,
           [targetMode]: {
@@ -573,24 +467,37 @@ export default function Home() {
         setSplashActive(false);
       }
     },
-    [freeTierBlocked, geminiApiKey, usage]
+    [freeTierBlocked, noteUsage]
   );
 
   const handleMoodBoardSearch = useCallback(
     (description: string) => {
-      setMode('moodboard');
+      goTo('moodboard');
       setMoodBoardSaved(false);
-      runSearch('moodboard', { type: 'text', description });
+      const trimmed = description.trim();
+      runSearch('moodboard', () =>
+        visualSearch({ mode: 'moodboard', text: trimmed, userApiKey })
+      );
     },
-    [runSearch]
+    [runSearch, userApiKey, goTo]
   );
 
-  const handleImageUpload = useCallback(
-    (base64: string, mimeType: string) => {
-      setMode('stealthisshot');
-      runSearch('stealthisshot', { type: 'image', image: base64, mimeType });
+  const handleShotSearch = useCallback(
+    (payload: ShotSearchPayload) => {
+      goTo('stealthisshot');
+      runSearch('stealthisshot', () =>
+        payload.photoUrl
+          ? similarSearch({ photoUrl: payload.photoUrl, focus: payload.focus, userApiKey })
+          : visualSearch({
+              mode: 'stealthisshot',
+              image: payload.image,
+              mimeType: payload.mimeType,
+              focus: payload.focus,
+              userApiKey,
+            })
+      );
     },
-    [runSearch]
+    [runSearch, userApiKey, goTo]
   );
 
   const handleMoodBoardInputChange = useCallback((nextValue: string) => {
@@ -609,13 +516,13 @@ export default function Home() {
     setIsExportingMoodBoard(true);
     try {
       await exportMoodBoardImage(photos);
+      // Unsplash guidelines: exporting composes these photos into a new
+      // image, which counts as a "use" — fire each download trigger.
+      photos.forEach((photo) => triggerDownload(photo.links.download_location));
       setMoodBoardSaved(true);
       setUiByMode((prev) => ({
         ...prev,
-        moodboard: {
-          status: prev.moodboard.status,
-          errorMsg: null,
-        },
+        moodboard: { status: prev.moodboard.status, errorMsg: null },
       }));
     } catch (err) {
       setUiByMode((prev) => ({
@@ -655,209 +562,534 @@ export default function Home() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedMoodBoard]);
 
-  const activeUi = uiByMode[mode];
-  const activeResults = resultsByMode[mode];
+  const isSearchMode = mode === 'moodboard' || mode === 'stealthisshot';
+  const activeUi = isSearchMode ? uiByMode[mode as SearchMode] : null;
+  const activeResults = isSearchMode ? resultsByMode[mode as SearchMode] : null;
 
-  const isLoading = activeUi.status === 'analyzing' || activeUi.status === 'searching';
+  const isLoading = activeUi?.status === 'analyzing' || activeUi?.status === 'searching';
   const inputsDisabled = isLoading || freeTierBlocked;
-  const loadingCopy =
-    activeUi.status === 'analyzing' || activeUi.status === 'searching'
-      ? STATUS_COPY[activeUi.status]
-      : null;
-  const modeLabel = mode === 'moodboard' ? 'Mood Board' : 'Steal This Shot';
-  const usageMonthLabel = usage ? formatMonth(usage.month) : null;
-  const usageLimit = usage?.limit ?? DEFAULT_MONTHLY_LIMIT;
-  const usageCopy = usage ? (
-    <>
-      You are on the free plan - that is <strong>{usageLimit} actions per month</strong>. You have{' '}
-      <strong>
-        {usage.remaining} left for {usageMonthLabel}
-      </strong>
-      .
-    </>
-  ) : (
-    <>
-      You are on the free plan - that is <strong>{usageLimit} actions per month</strong>.
-    </>
-  );
-  const setupCopy = hasUserGeminiKey
-    ? 'Using your Gemini API key for analysis. Free-plan monthly limits are bypassed while your key is active.'
-    : 'Want unlimited use? Splashboard is open source - clone the repo and run it locally with your own Gemini and Unsplash API keys. Setup takes a few minutes.';
-  const blockedCopy = usage
-    ? `You've used all ${usage.limit} free actions for ${formatMonth(usage.month)}. They'll reset on the 1st of next month - or you can run your own copy any time with the setup guide below.`
-    : `You've used all free actions for this month. They'll reset on the 1st of next month - or you can run your own copy any time with the setup guide below.`;
+  const loadingCopy = isLoading ? 'Reading the reference and hunting pins...' : null;
+  const meta = mode === 'home' ? HOME_META : MODE_META[mode];
+  const runsMeterCopy = hasUserKey
+    ? 'Using your API key — no run limits.'
+    : usage
+      ? usage.limit > 0
+        ? `${usage.remaining} of ${usage.limit} free runs left this month`
+        : 'Unlimited runs on this backend'
+      : `${DEFAULT_MONTHLY_LIMIT} free runs per month`;
+  const showSampleBoard =
+    mode === 'moodboard' && (activeResults?.photos.length ?? 0) === 0 && !isLoading;
+  const showSampleShot =
+    mode === 'stealthisshot' && (activeResults?.photos.length ?? 0) === 0 && !isLoading;
 
   return (
     <>
       <SplashAnimation active={splashActive} />
 
-      <div
-        className={`app-shell ${mode === 'stealthisshot' ? 'app-shell--shot' : ''} min-h-dvh flex flex-col`}
-      >
+      <div className="app-shell min-h-dvh flex flex-col" data-tool={mode}>
         <div className="noise-overlay" aria-hidden="true" />
 
         <header className="app-header sticky top-0 z-30">
           <div className="app-header__inner max-w-7xl mx-auto px-4">
-            <Link href="/" className="wordmark-wrap" aria-label="Splashboard home">
+            <Link
+              href="/"
+              className="wordmark-wrap"
+              aria-label="Splashboard home"
+              onClick={(event) => {
+                event.preventDefault();
+                goTo('home');
+              }}
+            >
               <span className="wordmark">Splashboard</span>
-              <span className="wordmark-tag">creative arcade</span>
             </Link>
-
+            <a
+              href={REPO_URL}
+              className="gh-star"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Star Splashboard on GitHub"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+              </svg>
+              <span>Star on GitHub</span>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
+              </svg>
+            </a>
           </div>
         </header>
 
         <main className="flex-1">
-          <section className="max-w-7xl mx-auto px-4 pt-9 pb-8">
-            <div className="studio-layout">
-              <aside className="story-panel">
-                <h1 className="hero-title">Find matching visuals fast.</h1>
-                {!showFreePlanNotice && (
-                  <div className="hero-concept-cloud" aria-hidden="true">
-                    {CONCEPT_TAGS.map(({ label, delay, variant }) => (
-                      <span
-                        key={label}
-                        className={`hero-concept-tag hero-concept-tag--${variant}`}
-                        style={{ animationDelay: delay }}
-                      >
-                        {label}
+          <section className="max-w-7xl mx-auto px-4 pt-10 pb-8">
+            <div className="hero-block">
+              <h1 className="hero-title">Find matching visuals <em className="hero-title__accent">fast.</em></h1>
+              <p className="hero-copy">{meta.explainer}</p>
+            </div>
+
+            <div className={`tool-area ${mode === 'profile' ? 'tool-area--wide' : ''}`}>
+              <div className="stage-toolbar">
+                <div className="lens-toggle" role="tablist" aria-label="Tools" data-mode={mode}>
+                  {(Object.keys(MODE_META) as Mode[]).map((toolMode) => (
+                    <button
+                      key={toolMode}
+                      role="tab"
+                      aria-selected={mode === toolMode}
+                      className={`lens-toggle__tab ${mode === toolMode ? 'lens-toggle__tab--active' : ''}`}
+                      onClick={() => goTo(toolMode)}
+                    >
+                      {MODE_META[toolMode].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {mode === 'home' && (
+                <div className="home-grid t-panel-slide" data-open="true">
+                  <button
+                    type="button"
+                    className="home-card home-card--moodboard"
+                    onClick={() => goTo('moodboard')}
+                  >
+                    <span className="home-card__title">Mood Board</span>
+                    <span className="home-card__tag">{MODE_META.moodboard.tag}</span>
+                    <span className="home-card__quote">&ldquo;{SAMPLE_PROMPT}&rdquo;</span>
+                    <span className="home-card__collage" aria-hidden="true">
+                      {SAMPLE_PHOTOS.slice(0, 6).map((photo) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={photo.id} src={photo.urls.small} alt="" loading="lazy" />
+                      ))}
+                    </span>
+                    <span className="home-card__cta">Open →</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="home-card home-card--stealthisshot"
+                    onClick={() => goTo('stealthisshot')}
+                  >
+                    <span className="home-card__title">Steal This Shot</span>
+                    <span className="home-card__tag">{MODE_META.stealthisshot.tag}</span>
+                    <span className="home-card__quote">&ldquo;{SAMPLE_SHOT.focus}&rdquo;</span>
+                    <span className="home-card__shotrow" aria-hidden="true">
+                      <span className="home-card__shotref">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={SAMPLE_SHOT.reference.urls.small} alt="" loading="lazy" />
+                        <em>reference</em>
                       </span>
-                    ))}
-                  </div>
-                )}
-                <p className="hero-copy">
-                  Type a mood or upload a photo to get similar shots and useful camera details.
-                </p>
-                {showFreePlanNotice && (
-                  <div className="quota-panel" aria-live="polite">
-                    <p className="quota-panel__eyebrow">Free plan</p>
-                    <div className="quota-panel__key-entry">
-                      <label htmlFor="gemini-api-key" className="quota-panel__key-label">
-                        Gemini API key (optional)
-                      </label>
-                      <input
-                        id="gemini-api-key"
-                        type="password"
-                        autoComplete="off"
-                        spellCheck={false}
-                        value={geminiApiKey}
-                        onChange={(event) => setGeminiApiKey(event.target.value)}
-                        placeholder="AIza..."
-                        className="quota-panel__key-input"
-                      />
-                      <p className="quota-panel__key-note">
-                        {hasUserGeminiKey
-                          ? 'Kept only in this tab session and sent only to your configured backend on analyze requests.'
-                          : 'Add your key to continue when the free monthly limit is reached.'}
-                      </p>
-                    </div>
-                    <p className="quota-panel__summary">{usageCopy}</p>
-                    <p className="quota-panel__contact">
-                      {setupCopy}{' '}
-                      <a
-                        href={FREE_PLAN_SETUP_URL}
-                        className="footer-link"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        View setup guide
-                      </a>
-                      .
-                    </p>
-                    {freeTierBlocked && (
-                      <p className="quota-panel__alert">
-                        {blockedCopy}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </aside>
+                      <span className="home-card__shotarrow">→</span>
+                      <span className="home-card__shotmatches">
+                        {[SAMPLE_SHOT.photos[0], SAMPLE_SHOT.photos[2] ?? SAMPLE_SHOT.photos[1]].map(
+                          (match) => (
+                            <span key={match.id} className="home-card__shotmatch">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={match.urls.small} alt="" loading="lazy" />
+                              <span className="home-card__exif">
+                                {match.exif?.model ?? 'Camera'} · {match.exif?.focal_length ?? '?'}mm · f/
+                                {match.exif?.aperture ?? '?'} · ISO {match.exif?.iso ?? '?'}
+                              </span>
+                            </span>
+                          )
+                        )}
+                      </span>
+                    </span>
+                    <span className="home-card__cta">Open →</span>
+                  </button>
 
-              <div className="studio-stage">
-                <div className="stage-toolbar">
-                  <div className="lens-toggle" role="tablist" aria-label="Results lens" data-mode={mode}>
-                    <button
-                      role="tab"
-                      aria-selected={mode === 'moodboard'}
-                      className={`lens-toggle__tab ${mode === 'moodboard' ? 'lens-toggle__tab--active' : ''}`}
-                      onClick={() => setMode('moodboard')}
-                    >
-                      Mood Board
-                    </button>
-                    <button
-                      role="tab"
-                      aria-selected={mode === 'stealthisshot'}
-                      className={`lens-toggle__tab ${mode === 'stealthisshot' ? 'lens-toggle__tab--active' : ''}`}
-                      onClick={() => setMode('stealthisshot')}
-                    >
-                      Steal This Shot
-                    </button>
-                  </div>
-                </div>
-
-                <div className="tool-switcher" aria-label="Search tools">
-                  {mode === 'moodboard' ? (
-                    <article className="tool-card tool-card--mood tool-card--active">
-                      <div className="tool-card__header">
-                        <div>
-                          <h2>Mood Board</h2>
-                          <p>Prompt to pins</p>
-                        </div>
-                      </div>
-                      <MoodBoard
-                        value={moodBoardInput}
-                        onValueChange={handleMoodBoardInputChange}
-                        onSearch={handleMoodBoardSearch}
-                        disabled={inputsDisabled}
-                      />
-                    </article>
-                  ) : (
-                    <article className="tool-card tool-card--shot tool-card--active">
-                      <div className="tool-card__header">
-                        <div>
-                          <h2>Steal This Shot</h2>
-                          <p>Reference to lookalikes + camera DNA</p>
-                        </div>
-                      </div>
-                      <StealTheShot onUpload={handleImageUpload} disabled={inputsDisabled} />
-                    </article>
-                  )}
-                </div>
-
-                {loadingCopy && (
-                  <p
-                    className="status-inline"
-                    role="status"
-                    aria-live="polite"
+                  <button
+                    type="button"
+                    className="home-card home-card--profile"
+                    onClick={() => goTo('profile')}
                   >
+                    <span className="home-card__title">Profile Explorer</span>
+                    <span className="home-card__tag">{MODE_META.profile.tag}</span>
+                    <span className="home-card__profilehead" aria-hidden="true">
+                      {SAMPLE_PROFILE.user.profile_image?.medium && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={SAMPLE_PROFILE.user.profile_image.medium} alt="" />
+                      )}
+                      <span>
+                        <strong>{SAMPLE_PROFILE.user.name}</strong>
+                        <span className="home-card__profilemeta">
+                          @{SAMPLE_PROFILE.user.username} · {PROFILE_SHOWCASE.totalPhotos} photos indexed
+                        </span>
+                      </span>
+                    </span>
+                    <span className="home-card__ask" aria-hidden="true">
+                      <span className="home-card__ask-input">misty coastline shots from winter</span>
+                      <span className="home-card__ask-btn">Ask</span>
+                    </span>
+                    <span className="home-card__ask-note" aria-hidden="true">
+                      {PROFILE_SHOWCASE.askNote}
+                    </span>
+                    <span className="home-card__chips" aria-hidden="true">
+                      {PROFILE_SHOWCASE.clusters.map((cluster) => (
+                        <span key={cluster.label} className="topic-chip">
+                          {cluster.label}
+                          <span className="topic-chip__count">{cluster.count}</span>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="home-card__minilabel" aria-hidden="true">Shooting activity</span>
+                    <span className="home-card__histogram" aria-hidden="true">
+                      {PROFILE_SHOWCASE.histogram.map((count, i) => {
+                        const max = Math.max(...PROFILE_SHOWCASE.histogram);
+                        return <span key={i} style={{ height: `${Math.max(10, (count / max) * 100)}%` }} />;
+                      })}
+                    </span>
+                    <span className="home-card__minilabel" aria-hidden="true">Places</span>
+                    <span className="home-card__chips" aria-hidden="true">
+                      {PROFILE_SHOWCASE.places.map((place) => (
+                        <span key={place.label} className="topic-chip">
+                          {place.label}
+                          <span className="topic-chip__count">{place.count}</span>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="home-card__thumbs" aria-hidden="true">
+                      {SAMPLE_PROFILE.photos.slice(0, 3).map((photo) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={photo.id} src={photo.urls.thumb} alt="" loading="lazy" />
+                      ))}
+                    </span>
+                    <span className="home-card__cta">Open →</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="tool-switcher" aria-label="Search tools">
+                {mode === 'moodboard' && (
+                  <article className="tool-card tool-card--mood tool-card--active t-panel-slide" data-open="true">
+                    <MoodBoard
+                      value={moodBoardInput}
+                      onValueChange={handleMoodBoardInputChange}
+                      onSearch={handleMoodBoardSearch}
+                      disabled={inputsDisabled}
+                    />
+                  </article>
+                )}
+                {mode === 'stealthisshot' && (
+                  <article className="tool-card tool-card--shot tool-card--active t-panel-slide" data-open="true">
+                    <StealTheShot onSearch={handleShotSearch} disabled={inputsDisabled} prefill={shotPrefill} />
+                  </article>
+                )}
+                {mode === 'profile' && (
+                  <article className="tool-card tool-card--mood tool-card--profile tool-card--active t-panel-slide" data-open="true">
+                    <ProfileExplorer userApiKey={userApiKey} onUsage={noteUsage} autoOpen={profileAutoOpen} />
+                  </article>
+                )}
+              </div>
+
+              {loadingCopy && (
+                <p className="status-inline" role="status" aria-live="polite">
+                  <span className="t-shimmer" data-text={loadingCopy}>
                     {loadingCopy}
-                  </p>
-                )}
+                  </span>
+                </p>
+              )}
 
-                {activeUi.status === 'error' && activeUi.errorMsg && (
-                  <p
-                    className="error-inline"
-                    role="alert"
-                  >
-                    {activeUi.errorMsg}
+              {activeUi?.status === 'error' && activeUi.errorMsg && (
+                <p className="error-inline" role="alert">
+                  {activeUi.errorMsg}
+                </p>
+              )}
+
+              <p className="runs-meter">
+                <span
+                  className={`runs-meter__dot ${
+                    !hasUserKey && usage?.remaining === 0 ? 'runs-meter__dot--empty' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+                {runsMeterCopy}
+                <button
+                  type="button"
+                  className="runs-meter__why"
+                  onClick={() => setShowFreePlanNotice((value) => !value)}
+                  aria-expanded={showFreePlanNotice}
+                >
+                  {showFreePlanNotice ? 'Hide' : 'Details'}
+                </button>
+              </p>
+
+              {mode === 'home' && (
+                <div className="how-strip how-strip--home" aria-label="How Splashboard works">
+                  {HOW_IT_WORKS.map((item) => (
+                    <div key={item.step} className="how-step">
+                      <span className="how-step__num">{item.step}</span>
+                      <div>
+                        <p className="how-step__title">{item.title}</p>
+                        <p className="how-step__copy">{item.copy}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {showFreePlanNotice && (
+              <div className="quota-panel quota-strip t-panel-slide" data-open="true" aria-live="polite">
+                <p className="quota-panel__eyebrow">Free &amp; open source</p>
+                <p className="quota-panel__summary">
+                  {usage && usage.limit === 0
+                    ? 'Splashboard is a free, open-source project. This backend has no search limits set.'
+                    : `Splashboard is a free, open-source project, so each visitor gets ${usage?.limit ?? DEFAULT_MONTHLY_LIMIT} searches a month.`}{' '}
+                  Samples and already-indexed profiles are always free to browse.
+                </p>
+                <div className="quota-panel__key-entry">
+                  <label htmlFor="user-api-key" className="quota-panel__key-label">
+                    Unlimited searches: use your own API key (OpenAI or Gemini)
+                  </label>
+                  <input
+                    id="user-api-key"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={userApiKey}
+                    onChange={(event) => setUserApiKey(event.target.value)}
+                    placeholder="sk-... or AIza..."
+                    className="quota-panel__key-input"
+                  />
+                  <p className="quota-panel__key-note">
+                    {hasUserKey
+                      ? 'Using your key — no limits. It stays in this tab and is only used for your searches.'
+                      : 'Your key stays in this tab and is only used for your searches.'}
+                  </p>
+                </div>
+                <p className="quota-panel__contact">
+                  Or{' '}
+                  <a href={REPO_URL} className="footer-link" target="_blank" rel="noopener noreferrer">
+                    clone the repo
+                  </a>{' '}
+                  and run your own copy.
+                </p>
+                {freeTierBlocked && (
+                  <p className="quota-panel__alert">
+                    That&apos;s all your free searches for {formatMonth(usage?.month ?? '')}. Add a key above or
+                    clone the repo — browsing stays free.
                   </p>
                 )}
               </div>
-            </div>
+            )}
           </section>
 
-          {activeResults.photos.length > 0 && (
+          {showSampleBoard && (
+            <section className="sample-section max-w-7xl mx-auto px-4 pb-16">
+              <div className="how-strip" aria-label="How Splashboard works">
+                {HOW_IT_WORKS.map((item) => (
+                  <div key={item.step} className="how-step">
+                    <span className="how-step__num">{item.step}</span>
+                    <div>
+                      <p className="how-step__title">{item.title}</p>
+                      <p className="how-step__copy">{item.copy}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="sample-board">
+                <div className="results-header">
+                  <div>
+                    <p className="results-header__eyebrow">Sample board · cached demo</p>
+                    <h2 className="results-header__title">&ldquo;{SAMPLE_PROMPT}&rdquo;</h2>
+                  </div>
+                  <div className="results-header__actions">
+                    <p className="results-header__count">Uses none of your free runs</p>
+                    <button
+                      type="button"
+                      className="export-btn"
+                      onClick={() => {
+                        handleMoodBoardInputChange(SAMPLE_PROMPT);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      Remix this prompt
+                    </button>
+                  </div>
+                </div>
+                <div className="moodboard-canvas">
+                  {SAMPLE_PHOTOS.map((photo, i) => (
+                    <PhotoCard key={photo.id} photo={photo} index={i} variant="mood" showExif={false} />
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {showSampleShot && (
+            <section className="sample-section max-w-7xl mx-auto px-4 pb-16">
+              <div className="sample-board">
+                <div className="results-header">
+                  <div>
+                    <p className="results-header__eyebrow">Sample · cached demo</p>
+                    <h2 className="results-header__title">
+                      One reference photo, matched by &ldquo;{SAMPLE_SHOT.focus}&rdquo;
+                    </h2>
+                  </div>
+                  <div className="results-header__actions">
+                    <p className="results-header__count">Uses none of your free searches</p>
+                    <button
+                      type="button"
+                      className="export-btn"
+                      onClick={() => {
+                        setShotPrefill({
+                          photoUrl: SAMPLE_SHOT.reference.links.html,
+                          focus: SAMPLE_SHOT.focus,
+                        });
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      Try this reference
+                    </button>
+                  </div>
+                </div>
+                <div className="sample-shot-row">
+                  <div className="sample-shot-ref">
+                    <p className="profile-input-label">Reference</p>
+                    <PhotoCard photo={SAMPLE_SHOT.reference} index={0} variant="shot" showExif={false} />
+                  </div>
+                  <div className="sample-shot-matches">
+                    <p className="profile-input-label">Lookalikes with camera settings</p>
+                    <div className="shot-grid">
+                      {SAMPLE_SHOT.photos.slice(0, 6).map((photo, i) => (
+                        <PhotoCard key={photo.id} photo={photo} index={i + 1} variant="shot" showExif />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {mode === 'profile' && !profileAutoOpen && (
+            <section className="sample-section max-w-7xl mx-auto px-4 pb-16">
+              <div className="sample-board">
+                <div className="results-header">
+                  <div>
+                    <p className="results-header__eyebrow">Sample · Profile Explorer</p>
+                    <h2 className="results-header__title">{SAMPLE_PROFILE.user.name}&rsquo;s portfolio, mapped</h2>
+                  </div>
+                  <div className="results-header__actions">
+                    <p className="results-header__count">Browsing indexed profiles is always free</p>
+                    <button
+                      type="button"
+                      className="export-btn"
+                      onClick={() => {
+                        setProfileAutoOpen(SAMPLE_PROFILE.user.username);
+                        goTo('profile');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      Explore it live
+                    </button>
+                  </div>
+                </div>
+
+                {/* Static snapshot of the real explorer UI — nothing here is
+                    interactive; the CTA above opens the live version. */}
+                <div className="sample-static" aria-hidden="true">
+                  <div className="profile-header">
+                    {SAMPLE_PROFILE.user.profile_image?.medium && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={SAMPLE_PROFILE.user.profile_image.medium} alt="" className="candidate-avatar candidate-avatar--lg" />
+                    )}
+                    <div className="profile-header__names">
+                      <p className="profile-header__name">{SAMPLE_PROFILE.user.name}</p>
+                      <p className="profile-header__meta">
+                        @{SAMPLE_PROFILE.user.username} · {SAMPLE_PROFILE.user.total_photos} photos
+                        {SAMPLE_PROFILE.user.location ? ` · ${SAMPLE_PROFILE.user.location}` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="ask-row">
+                    <input
+                      type="text"
+                      readOnly
+                      tabIndex={-1}
+                      value=""
+                      placeholder={`Ask this portfolio anything, e.g. "misty coastline shots from winter"`}
+                      className="profile-input"
+                    />
+                    <span className="search-btn"><span>Ask</span></span>
+                  </div>
+
+                  <div className="topic-strip">
+                    {SAMPLE_PROFILE.clusters.map((cluster) => (
+                      <span key={cluster.label} className="topic-chip">
+                        {cluster.label}
+                        <span className="topic-chip__count">{cluster.count}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="facet-panel">
+                    <div className="facet-block">
+                      <p className="facet-block__title">
+                        Places{' '}
+                        <span className="facet-block__hint">
+                          {SAMPLE_PROFILE.facets.enrichedCount}/{SAMPLE_PROFILE.facets.totalIndexed} photos location-checked
+                        </span>
+                      </p>
+                      <div className="facet-chips">
+                        {SAMPLE_PROFILE.facets.topLocations.map((loc) => (
+                          <span key={loc.name} className="topic-chip">
+                            {loc.name}
+                            <span className="topic-chip__count">{loc.count}</span>
+                          </span>
+                        ))}
+                      </div>
+                      <p className="facet-block__empty">Real photographer-tagged places, fetched on demand.</p>
+                    </div>
+                    {SAMPLE_PROFILE.facets.dateHistogram.length > 1 && (
+                      <div className="facet-block">
+                        <p className="facet-block__title">Activity</p>
+                        <div className="date-histogram">
+                          {SAMPLE_PROFILE.facets.dateHistogram.map((bucket) => {
+                            const max = Math.max(...SAMPLE_PROFILE.facets.dateHistogram.map((b) => b.count));
+                            return (
+                              <div
+                                key={bucket.month}
+                                className="date-histogram__bar"
+                                style={{ height: `${Math.max(8, (bucket.count / max) * 100)}%` }}
+                              />
+                            );
+                          })}
+                        </div>
+                        <p className="facet-block__hint">
+                          {shortMonth(SAMPLE_PROFILE.facets.dateHistogram[0].month)} to{' '}
+                          {shortMonth(
+                            SAMPLE_PROFILE.facets.dateHistogram[SAMPLE_PROFILE.facets.dateHistogram.length - 1].month
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="results-header__count">{SAMPLE_PROFILE.totalMatches} matches</p>
+                  <div className="moodboard-canvas">
+                    {SAMPLE_PROFILE.photos.map((photo, i) => (
+                      <PhotoCard key={photo.id} photo={photo} index={i} variant="mood" showExif={false} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {isSearchMode && activeResults && activeResults.photos.length > 0 && (
             <ResultsGrid
               photos={activeResults.photos}
               mode={mode}
               descriptors={activeResults.descriptors}
-              modeLabel={modeLabel}
+              modeLabel={meta.label}
               onExportMoodBoard={mode === 'moodboard' ? handleMoodBoardExport : undefined}
               exportDisabled={isExportingMoodBoard}
               exportLabel={isExportingMoodBoard ? 'Exporting...' : 'Download board'}
             />
           )}
 
-          {activeUi.status === 'done' && activeResults.photos.length === 0 && (
+          {isSearchMode && activeUi?.status === 'done' && activeResults?.photos.length === 0 && (
             <section className="max-w-7xl mx-auto px-4 pb-16">
               <p className="empty-state">No results found. Try a different prompt or image.</p>
             </section>
@@ -878,7 +1110,7 @@ export default function Home() {
               </a>
             </p>
             <p className="text-xs text-[var(--text-muted)] hidden sm:block">
-              Live lens: {modeLabel}
+              Live lens: {meta.label}
             </p>
           </div>
         </footer>

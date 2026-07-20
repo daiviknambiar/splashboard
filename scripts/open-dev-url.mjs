@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-const url = 'http://localhost:3000/splashboard';
+const url = 'http://localhost:3001/splashboard';
 
 try {
   if (process.platform === 'darwin') {
