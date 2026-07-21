@@ -137,6 +137,43 @@ export function getCachedDetail(id, maxAgeMs) {
   return JSON.parse(row.json);
 }
 
+// ---- Cache retention ----
+//
+// Everything this backend stores is a cache of Unsplash-owned metadata, kept
+// only to avoid re-fetching the same pages. Nothing here is a source of
+// truth, so it gets an expiry rather than living forever.
+
+export function deleteProfileCache(username) {
+  db.prepare('DELETE FROM photos WHERE username = ?').run(username);
+  db.prepare('DELETE FROM profiles WHERE username = ?').run(username);
+}
+
+export function purgeExpiredCache({ profileMaxAgeMs, detailMaxAgeMs }) {
+  const now = Date.now();
+
+  const staleProfiles = db
+    .prepare('SELECT username FROM profiles WHERE indexed_at IS NULL OR indexed_at < ?')
+    .all(now - profileMaxAgeMs);
+  for (const row of staleProfiles) {
+    deleteProfileCache(row.username);
+  }
+
+  // Photos whose profile row is already gone (e.g. an interrupted purge).
+  const orphans = db
+    .prepare('DELETE FROM photos WHERE username NOT IN (SELECT username FROM profiles)')
+    .run();
+
+  const details = db
+    .prepare('DELETE FROM detail_cache WHERE fetched_at < ?')
+    .run(now - detailMaxAgeMs);
+
+  return {
+    profiles: staleProfiles.length,
+    orphanPhotos: Number(orphans.changes ?? 0),
+    details: Number(details.changes ?? 0),
+  };
+}
+
 // ---- Monthly usage quotas (per client key + global backstop) ----
 
 db.exec(`

@@ -294,7 +294,20 @@ export function ProfileExplorer({ userApiKey, onUsage, autoOpen }: ProfileExplor
             <img src={status.user.profile_image.medium} alt="" className="candidate-avatar candidate-avatar--lg" />
           )}
           <div className="profile-header__names">
-            <p className="profile-header__name">{status.user.name}</p>
+            <p className="profile-header__name">
+              {/* Link back to the photographer's Unsplash profile with utm
+                  params, per Unsplash API guideline 3. */}
+              <a
+                href={`${
+                  status.user.links?.html ?? `https://unsplash.com/@${status.user.username}`
+                }?utm_source=splashboard&utm_medium=referral`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="profile-header__link"
+              >
+                {status.user.name}
+              </a>
+            </p>
             <p className="profile-header__meta">
               @{status.user.username} · {status.totalPhotos} photos
               {status.user.location ? ` · ${status.user.location}` : ''}

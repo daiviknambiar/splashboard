@@ -1,4 +1,5 @@
 import {
+  deleteProfileCache,
   getProfile,
   getProfilePhotos,
   insertProfilePhotos,
@@ -11,6 +12,13 @@ import { generateJson } from './llm.js';
 import { getPhotoDetails, getUser, getUserPhotos, rateBudget, searchUsers, UnsplashError } from './unsplash.js';
 
 const PER_PAGE = 30;
+// An indexed portfolio is a cache of Unsplash metadata, not our data. After
+// this long it is dropped and rebuilt from the API, so we never serve a
+// stale mirror of a photographer's work (deleted photos, renamed captions).
+export const PROFILE_CACHE_TTL_MS = Number.parseInt(
+  process.env.PROFILE_CACHE_TTL_MS ?? '',
+  10
+) || 30 * 24 * 60 * 60 * 1000;
 // Keep a reserve so profile scans never consume the entire hourly budget —
 // regular searches must keep working while an index is in progress.
 const RATE_RESERVE = 8;
@@ -88,6 +96,14 @@ function budgetAllows(requests) {
  */
 export async function advanceProfileIndex(username, { maxRequests = 8 } = {}) {
   let profile = getProfile(username);
+
+  // Expired index: drop it and rebuild from page 1 rather than serving
+  // month-old metadata.
+  if (profile && profile.indexedAt && Date.now() - profile.indexedAt > PROFILE_CACHE_TTL_MS) {
+    deleteProfileCache(username);
+    profile = null;
+  }
+
   if (!profile) {
     const user = await getUser(username);
     upsertProfile(username, user, user.total_photos ?? 0);

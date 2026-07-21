@@ -88,7 +88,7 @@ export function PhotoCard({
         decoding="async"
       />
 
-      {/* Hover overlay */}
+      {/* Decorative scrim only - the credit below is never hidden. */}
       <div className="photo-card__overlay" aria-hidden="true">
         {photo.color && (
           <span
@@ -96,21 +96,27 @@ export function PhotoCard({
             style={{ backgroundColor: photo.color }}
           />
         )}
+      </div>
 
-        <p className="text-white/90 text-xs leading-relaxed">
+      {/* Unsplash API guideline 3: every displayed photo must credit the
+          photographer and Unsplash with links back, using utm params. This
+          stays visible at all times - hover-only credit is invisible on touch
+          devices and to assistive tech. */}
+      <div className="photo-card__credit">
+        <p className="photo-card__credit-text">
           <a
             href={`${photo.user.links.html}?utm_source=splashboard&utm_medium=referral`}
-            className="font-semibold hover:text-white transition-colors"
+            className="photo-card__credit-name"
             onClick={(e) => e.stopPropagation()}
             target="_blank"
             rel="noopener noreferrer"
           >
             {photo.user.name}
           </a>
-          <span className="text-white/55"> on </span>
+          <span className="photo-card__credit-sep"> on </span>
           <a
             href="https://unsplash.com?utm_source=splashboard&utm_medium=referral"
-            className="text-white/55 hover:text-white/80 transition-colors"
+            className="photo-card__credit-host"
             onClick={(e) => e.stopPropagation()}
             target="_blank"
             rel="noopener noreferrer"

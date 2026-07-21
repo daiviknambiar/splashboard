@@ -1,7 +1,7 @@
 import { getCachedDetail, savePhotoDetail } from './db.js';
 
 const UNSPLASH_BASE = 'https://api.unsplash.com';
-const DETAIL_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export const DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Tracks the hourly budget from Unsplash's own response headers so we can
 // refuse expensive work (profile scans) before hitting a hard 403.
@@ -99,7 +99,7 @@ export async function getUserPhotos(username, { page = 1, perPage = 30, orderBy 
 
 export async function getPhotoDetails(photoId, { allowCache = true } = {}) {
   if (allowCache) {
-    const cached = getCachedDetail(photoId, DETAIL_CACHE_MAX_AGE_MS);
+    const cached = getCachedDetail(photoId, DETAIL_CACHE_TTL_MS);
     if (cached) return { detail: cached, fromCache: true };
   }
   const detail = await unsplashFetch(`/photos/${encodeURIComponent(photoId)}`);

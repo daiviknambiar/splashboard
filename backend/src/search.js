@@ -1,5 +1,5 @@
 import { generateJson } from './llm.js';
-import { getPhotoDetails, searchPhotos } from './unsplash.js';
+import { getPhotoDetails, searchPhotos, triggerDownload } from './unsplash.js';
 
 const UNSPLASH_COLORS = new Set([
   'black_and_white', 'black', 'white', 'yellow', 'orange', 'red', 'purple',
@@ -217,6 +217,16 @@ export async function loadReferencePhoto(photoUrl) {
 
   const imageUrl = detail?.urls?.small;
   if (!imageUrl) throw new Error('Could not load the reference photo from Unsplash.');
+
+  // Pulling the image bytes to analyze them is a download-like use, so
+  // Unsplash API guideline 2 requires hitting the download endpoint. Best
+  // effort - a failed ping must not break the search.
+  if (detail?.links?.download_location) {
+    triggerDownload(detail.links.download_location).catch((error) => {
+      console.warn('[unsplash] reference download trigger failed:', error.message);
+    });
+  }
+
   const response = await fetch(imageUrl);
   if (!response.ok) throw new Error('Could not download the reference photo.');
   const mimeType = response.headers.get('content-type')?.split(';')[0] || 'image/jpeg';

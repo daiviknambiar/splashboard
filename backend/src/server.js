@@ -4,12 +4,13 @@ loadEnv();
 import crypto from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
-import { getUsage, incrementUsage } from './db.js';
+import { getUsage, incrementUsage, purgeExpiredCache } from './db.js';
 import { LlmError, describeProviders } from './llm.js';
 import {
   advanceProfileIndex,
   enrichProfilePhotos,
   getProfileStatus,
+  PROFILE_CACHE_TTL_MS,
   queryProfilePhotos,
   resolveProfile,
   smartAsk,
@@ -20,7 +21,13 @@ import {
   executeQueryPlan,
   loadReferencePhoto,
 } from './search.js';
-import { rateBudget, searchPhotos, triggerDownload, UnsplashError } from './unsplash.js';
+import {
+  DETAIL_CACHE_TTL_MS,
+  rateBudget,
+  searchPhotos,
+  triggerDownload,
+  UnsplashError,
+} from './unsplash.js';
 
 const PORT = parsePositiveInt(process.env.PORT, 4000);
 // Per-visitor free AI runs per month (identified by hashed IP; 0 = unlimited).
@@ -372,6 +379,27 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: 'Unexpected server error.' });
 });
 
+// Cached Unsplash metadata is dropped once it expires, on boot and daily
+// after that, so profiles nobody revisits don't linger indefinitely.
+const CACHE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function sweepExpiredCache() {
+  try {
+    const removed = purgeExpiredCache({
+      profileMaxAgeMs: PROFILE_CACHE_TTL_MS,
+      detailMaxAgeMs: DETAIL_CACHE_TTL_MS,
+    });
+    if (removed.profiles || removed.details || removed.orphanPhotos) {
+      console.log(
+        `[backend] cache sweep: ${removed.profiles} profile(s), ` +
+          `${removed.orphanPhotos} orphan photo(s), ${removed.details} photo detail(s)`
+      );
+    }
+  } catch (error) {
+    console.error('[backend] cache sweep failed:', error);
+  }
+}
+
 app.listen(PORT, () => {
   const corsDisplay = c.allowAny ? '*' : Array.from(c.allowed).join(', ');
   const chain = describeProviders()
@@ -379,6 +407,9 @@ app.listen(PORT, () => {
     .join(', ');
   console.log(`[backend] listening on http://localhost:${PORT}`);
   console.log(`[backend] ai chain: ${chain} | cors=${corsDisplay || '(none)'}`);
+
+  sweepExpiredCache();
+  setInterval(sweepExpiredCache, CACHE_SWEEP_INTERVAL_MS).unref();
 });
 
 // ---- helpers ----

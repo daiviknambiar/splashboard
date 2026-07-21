@@ -35,6 +35,42 @@ const SAMPLE_PROFILE = sampleProfileData as {
   photos: RankedPhoto[];
 };
 
+const UNSPLASH_REFERRAL = 'https://unsplash.com?utm_source=splashboard&utm_medium=referral';
+
+function profileUrl(userLinksHtml: string) {
+  return `${userLinksHtml}?utm_source=splashboard&utm_medium=referral`;
+}
+
+/**
+ * Credit line for decorative preview thumbnails that can't carry their own
+ * per-photo overlay (the home cards are single <button>s, so links can't be
+ * nested inside them). Unsplash API guideline 3 still requires crediting the
+ * photographer and Unsplash with links back on every displayed photo, so the
+ * credit sits just outside the button.
+ */
+function PreviewCredit({ photos }: { photos: RankedPhoto[] }) {
+  const users = [...new Map(photos.map((photo) => [photo.user.links.html, photo.user])).values()];
+  if (users.length === 0) return null;
+
+  return (
+    <p className="preview-credit">
+      Photos by{' '}
+      {users.map((user, i) => (
+        <span key={user.links.html}>
+          {i > 0 && ', '}
+          <a href={profileUrl(user.links.html)} target="_blank" rel="noopener noreferrer">
+            {user.name}
+          </a>
+        </span>
+      ))}{' '}
+      on{' '}
+      <a href={UNSPLASH_REFERRAL} target="_blank" rel="noopener noreferrer">
+        Unsplash
+      </a>
+    </p>
+  );
+}
+
 function shortMonth(month: string): string {
   const [year, m] = month.split('-').map((v) => Number.parseInt(v, 10));
   if (!Number.isFinite(year) || !Number.isFinite(m)) return month;
@@ -157,7 +193,10 @@ async function exportMoodBoardImage(photos: RankedPhoto[]) {
   const headerHeight = 112;
   const columnGap = 30;
   const framePadding = 14;
-  const frameBottom = 26;
+  // Deep enough to print the photographer credit under each image, which
+  // Unsplash API guideline 3 requires on every use of a photo - including
+  // this composite export.
+  const frameBottom = 46;
   const cardGap = 26;
   const rotationPattern = [-0.8, 0.55, -0.32, 0.38];
   const maxColumns = 5;
@@ -319,6 +358,20 @@ async function exportMoodBoardImage(photos: RankedPhoto[]) {
       context.fillText('Image unavailable', 0, imageY + item.imageHeight / 2);
     }
 
+    // Photographer credit printed into the frame under each photo.
+    const creditText = `${item.photo.user.name} / Unsplash`;
+    context.fillStyle = '#6c5538';
+    context.font = '500 17px "DM Sans", sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    const creditMaxWidth = item.imageWidth;
+    let credit = creditText;
+    while (context.measureText(credit).width > creditMaxWidth && credit.length > 4) {
+      credit = `${credit.slice(0, -5).trimEnd()}…`;
+    }
+    context.fillText(credit, imageX, imageY + item.imageHeight + frameBottom / 2 - 2);
+    context.textBaseline = 'alphabetic';
+
     context.fillStyle = '#cf4f3f';
     context.beginPath();
     context.arc(0, -item.cardHeight / 2 + 12, 5, 0, Math.PI * 2);
@@ -326,6 +379,17 @@ async function exportMoodBoardImage(photos: RankedPhoto[]) {
 
     context.restore();
   });
+
+  // Board-level attribution back to Unsplash.
+  context.fillStyle = '#6c5538';
+  context.font = '500 21px "DM Sans", sans-serif';
+  context.textAlign = 'right';
+  context.fillText(
+    'Photos from Unsplash - unsplash.com',
+    canvasWidth - outerPadding,
+    outerPadding + 72
+  );
+  context.textAlign = 'left';
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) {
@@ -646,6 +710,7 @@ export default function Home() {
 
               {mode === 'home' && (
                 <div className="home-grid t-panel-slide" data-open="true">
+                  <div className="home-card-shell">
                   <button
                     type="button"
                     className="home-card home-card--moodboard"
@@ -662,7 +727,10 @@ export default function Home() {
                     </span>
                     <span className="home-card__cta">Open →</span>
                   </button>
+                  <PreviewCredit photos={SAMPLE_PHOTOS.slice(0, 6)} />
+                  </div>
 
+                  <div className="home-card-shell">
                   <button
                     type="button"
                     className="home-card home-card--stealthisshot"
@@ -695,7 +763,16 @@ export default function Home() {
                     </span>
                     <span className="home-card__cta">Open →</span>
                   </button>
+                  <PreviewCredit
+                    photos={[
+                      SAMPLE_SHOT.reference,
+                      SAMPLE_SHOT.photos[0],
+                      SAMPLE_SHOT.photos[2] ?? SAMPLE_SHOT.photos[1],
+                    ].filter(Boolean)}
+                  />
+                  </div>
 
+                  <div className="home-card-shell">
                   <button
                     type="button"
                     className="home-card home-card--profile"
@@ -754,6 +831,8 @@ export default function Home() {
                     </span>
                     <span className="home-card__cta">Open →</span>
                   </button>
+                  <PreviewCredit photos={SAMPLE_PROFILE.photos.slice(0, 3)} />
+                  </div>
                 </div>
               )}
 
@@ -1067,11 +1146,15 @@ export default function Home() {
                   </div>
 
                   <p className="results-header__count">{SAMPLE_PROFILE.totalMatches} matches</p>
-                  <div className="moodboard-canvas">
-                    {SAMPLE_PROFILE.photos.map((photo, i) => (
-                      <PhotoCard key={photo.id} photo={photo} index={i} variant="mood" showExif={false} />
-                    ))}
-                  </div>
+                </div>
+
+                {/* Outside the inert snapshot above: these are real Unsplash
+                    photos, so their credit links and download trigger must
+                    stay live. */}
+                <div className="moodboard-canvas">
+                  {SAMPLE_PROFILE.photos.map((photo, i) => (
+                    <PhotoCard key={photo.id} photo={photo} index={i} variant="mood" showExif={false} />
+                  ))}
                 </div>
               </div>
             </section>

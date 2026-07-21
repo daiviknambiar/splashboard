@@ -114,5 +114,10 @@ See [backend/README.md](backend/README.md) for the checklist (env vars, CORS, pe
 
 ## Unsplash attribution
 
-All photos are attributed to their photographers with links back to Unsplash, as required by their guidelines.
-Images are served directly from the Unsplash CDN - nothing is stored or proxied.
+This project follows the [Unsplash API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines):
+
+- **Hotlinking.** Every image - including the cached sample boards - is loaded from the URLs under `photo.urls`, straight from the Unsplash CDN. Nothing is stored, resized, or proxied.
+- **Attribution.** Every displayed photo carries an always-visible credit naming the photographer and Unsplash, linking to both with `?utm_source=splashboard&utm_medium=referral`. The credit is never hover-only, so it is present on touch devices and to screen readers. Decorative preview thumbnails on the home screen carry the same credit beside them, and the exported mood board PNG prints the credit into each frame.
+- **Download triggers.** `photo.links.download_location` is pinged whenever a photo is actually used: opening a photo, exporting a mood board, and server-side when a reference photo is fetched for AI analysis.
+- **Key confidentiality.** The Unsplash access key lives only on the backend, which proxies every API call. It is never shipped in the client bundle, and users are never asked for an Unsplash key of their own.
+- **Cache retention.** Indexed profile metadata is a cache, not a source of truth, so it expires. Profile indexes are dropped and rebuilt from the API after 30 days (`PROFILE_CACHE_TTL_MS`), per-photo detail after 24 hours. The backend sweeps expired rows on boot and daily after that, so nothing lingers for profiles nobody revisits.

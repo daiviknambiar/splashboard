@@ -154,12 +154,18 @@ body {
   color: var(--text-muted);
 }
 
+/* Tinted with the active tool accent so it reads as part of the stage
+   instead of a flat gray slab. Follows the per-tool palette like .tool-card. */
 .quota-panel {
   margin-top: 1rem;
-  border: 1px solid color-mix(in srgb, var(--border), transparent 28%);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 64%);
   border-radius: 0.9rem;
-  background: color-mix(in srgb, var(--surface), white 18%);
+  background:
+    radial-gradient(circle at 6% 0%, color-mix(in srgb, var(--accent), transparent 82%) 0%, transparent 48%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong), var(--accent-soft) 34%) 0%, var(--surface-strong) 100%);
+  box-shadow: var(--shadow-soft);
   padding: 0.76rem 0.8rem;
+  transition: background var(--theme-transition), border-color var(--theme-transition);
 }
 
 .quota-panel__eyebrow {
@@ -198,11 +204,17 @@ body {
   width: 100%;
   height: 2.1rem;
   border-radius: 0.54rem;
-  border: 1px solid color-mix(in srgb, var(--border), transparent 26%);
-  background: color-mix(in srgb, var(--surface), white 14%);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 70%);
+  background: color-mix(in srgb, var(--bg-secondary), black 14%);
   color: var(--text);
   font-size: 0.78rem;
   padding: 0 0.62rem;
+  transition: border-color var(--duration-fast) var(--ease-smooth-out),
+    box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+
+.quota-panel__key-input:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 50%);
 }
 
 .quota-panel__key-input:focus-visible {
@@ -267,7 +279,8 @@ body {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   box-shadow: 0 8px 20px color-mix(in srgb, var(--accent), transparent 65%);
   transform: translateX(0);
-  transition: transform 360ms cubic-bezier(0.19, 1, 0.22, 1), opacity 200ms ease, background var(--theme-transition);
+  transition: transform var(--duration-medium) var(--ease-smooth-out), opacity var(--duration-fast) var(--ease-smooth-out),
+    background var(--theme-transition);
 }
 
 .lens-toggle[data-mode='home']::before {
@@ -293,7 +306,7 @@ body {
   color: var(--text-muted);
   cursor: pointer;
   background: transparent;
-  transition: color 220ms ease, transform 220ms ease;
+  transition: color var(--duration-fast) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-smooth-out);
 }
 
 .lens-toggle__tab:not(.lens-toggle__tab--active):hover {
@@ -320,7 +333,7 @@ body {
   border-radius: 1rem;
   padding: 0.95rem;
   box-shadow: var(--shadow-soft);
-  transition: border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
+  transition: border-color var(--duration-medium) var(--ease-smooth-out), transform var(--duration-medium) var(--ease-smooth-out), box-shadow var(--duration-medium) var(--ease-smooth-out);
   overflow: hidden;
 }
 
@@ -398,7 +411,7 @@ body {
   font-size: 0.95rem;
   line-height: 1.58;
   color: #f0ead9;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition: border-color var(--duration-fast) var(--ease-smooth-out), box-shadow var(--duration-fast) var(--ease-smooth-out);
 }
 
 .mood-textarea::placeholder {
@@ -431,7 +444,8 @@ body {
   line-height: 1.3;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: color var(--duration-quick) var(--ease-smooth-out), border-color var(--duration-quick) var(--ease-smooth-out),
+    background var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-smooth-out);
 }
 
 .prompt-chip::before {
@@ -471,7 +485,7 @@ body {
   padding: 0.56rem 0.9rem;
   cursor: pointer;
   box-shadow: 0 6px 14px color-mix(in srgb, var(--accent-strong), transparent 68%);
-  transition: transform 120ms ease, filter 160ms ease;
+  transition: transform var(--duration-quick) var(--ease-smooth-out), filter var(--duration-fast) var(--ease-smooth-out);
 }
 
 .search-btn:hover:not(:disabled) {
@@ -511,7 +525,7 @@ body {
   text-align: center;
   cursor: pointer;
   overflow: hidden;
-  transition: transform 180ms ease, border-color 180ms ease;
+  transition: transform var(--duration-fast) var(--ease-smooth-out), border-color var(--duration-fast) var(--ease-smooth-out);
 }
 
 .drop-zone--shot {
@@ -543,7 +557,7 @@ body {
 .drop-zone__icon {
   margin-bottom: 1rem;
   color: color-mix(in srgb, var(--accent), white 20%);
-  transition: color 200ms ease;
+  transition: color var(--duration-fast) var(--ease-smooth-out);
 }
 
 .drop-zone__icon--active {
@@ -720,7 +734,7 @@ body {
   letter-spacing: 0.01em;
   padding: 0.38rem 0.72rem;
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease, transform 120ms ease;
+  transition: border-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-smooth-out);
 }
 
 .export-btn:hover:not(:disabled) {
@@ -869,7 +883,7 @@ body {
   border-radius: 0.92rem;
   position: relative;
   isolation: isolate;
-  animation: card-rise 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: card-rise var(--duration-very-slow) var(--ease-smooth-out) both;
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
@@ -923,12 +937,65 @@ body {
   padding: 0.72rem;
   background: linear-gradient(to top, rgba(18, 21, 28, 0.78), rgba(18, 21, 28, 0.2) 48%, transparent 78%);
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity var(--duration-fast) var(--ease-smooth-out);
 }
 
 .photo-card:hover .photo-card__overlay,
 .photo-card:focus-within .photo-card__overlay {
   opacity: 1;
+}
+
+/* Always-on photographer credit (Unsplash API guideline 3). Sits above the
+   image with its own scrim so it stays legible over any photo, and never
+   depends on hover - touch devices have no hover state. */
+.photo-card__credit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  padding: 0.9rem 0.62rem 0.42rem;
+  background: linear-gradient(to top, rgba(12, 15, 20, 0.82), rgba(12, 15, 20, 0.45) 55%, transparent);
+  pointer-events: auto;
+}
+
+.photo-card__credit-text {
+  margin: 0;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-card__credit-name {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  transition: color var(--duration-quick) var(--ease-smooth-out);
+}
+
+.photo-card__credit-name:hover,
+.photo-card__credit-host:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.photo-card__credit-host {
+  color: rgba(255, 255, 255, 0.72);
+  transition: color var(--duration-quick) var(--ease-smooth-out);
+}
+
+/* The card clips to its padding box (overflow: hidden), so the credit sits
+   over the bottom of the photo rather than in the polaroid frame. */
+.photo-card--mood .photo-card__credit {
+  padding: 0.8rem 0.5rem 0.34rem;
+}
+
+.photo-card--mood .photo-card__credit-text {
+  font-size: 0.62rem;
 }
 
 .photo-card__meta-panel {
@@ -939,7 +1006,8 @@ body {
   position: absolute;
   left: 0.52rem;
   right: 0.52rem;
-  bottom: 0.52rem;
+  /* Clears the always-on credit strip below it. */
+  bottom: 2.35rem;
   z-index: 3;
   margin: 0;
   padding: 0.5rem 0.55rem;
@@ -1182,16 +1250,56 @@ body {
   .lens-toggle::before,
   .lens-toggle__tab,
   .prompt-chip,
-  .search-btn {
+  .search-btn,
+  .quota-panel,
+  .quota-panel__key-input,
+  .candidate-row,
+  .topic-chip,
+  .home-card,
+  .gh-star,
+  .export-btn,
+  .photo-card__overlay,
+  .index-progress__fill {
     transition: none;
+  }
+
+  .photo-card {
+    animation: none;
   }
 }
 
-/* ── transitions-dev motion tokens (subset in use) ─────────────────── */
+/* ── transitions-dev motion tokens ─────────────────────────────────── */
 :root {
+  /* Durations */
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
   --duration-quick: 150ms;
   --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+  /* Easings */
   --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+  /* Distances */
+  --distance-micro: 4px;
+  --distance-small: 6px;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+  --distance-large: 30px;
+  /* Scales */
+  --scale-large: 0.96;
+  --scale-medium: 0.97;
+  --scale-small: 0.98;
+  --scale-tiny: 0.99;
+  /* Blur */
+  --blur-small: 2px;
+  --blur-medium: 3px;
+  --blur-large: 8px;
   /* Panel reveal */
   --panel-open-dur: 400ms;
   --panel-close-dur: 350ms;
@@ -1244,6 +1352,19 @@ body {
     opacity: 1;
     filter: blur(0);
   }
+}
+
+/* The panel reveal replaces the whole `transition` shorthand, which would
+   drop the accent tween on surfaces that carry both classes. The quota panel
+   stays mounted while the active tool (and therefore --accent) changes, so
+   re-declare both lists together instead of letting the colour snap. */
+.quota-panel.t-panel-slide[data-open="true"] {
+  transition:
+    transform var(--panel-open-dur) var(--panel-ease),
+    opacity   var(--panel-open-dur) var(--panel-ease),
+    filter    var(--panel-open-dur) var(--panel-ease),
+    background var(--theme-transition),
+    border-color var(--theme-transition);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1312,7 +1433,7 @@ body {
   padding: 0.62rem 0.8rem;
   font-size: 0.9rem;
   color: #f0ead9;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition: border-color var(--duration-fast) var(--ease-smooth-out), box-shadow var(--duration-fast) var(--ease-smooth-out);
 }
 
 .profile-input::placeholder {
@@ -1363,7 +1484,7 @@ body {
   padding: 0.5rem 0.7rem;
   cursor: pointer;
   text-align: left;
-  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  transition: border-color var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-smooth-out), box-shadow var(--duration-fast) var(--ease-smooth-out);
 }
 
 .candidate-row:hover {
@@ -1436,7 +1557,7 @@ body {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent), var(--accent-strong));
-  transition: width 500ms var(--ease-smooth-out);
+  transition: width var(--duration-very-slow) var(--ease-smooth-out);
 }
 
 .index-progress__copy {
@@ -1488,7 +1609,8 @@ body {
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 120ms ease;
+  transition: border-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out),
+    background var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-smooth-out);
 }
 
 .topic-chip:hover {
@@ -1806,6 +1928,53 @@ body {
   gap: 0.8rem;
 }
 
+/* Each card is wrapped so its Unsplash credit line can sit outside the
+   <button> - links cannot legally nest inside a button. */
+.home-card-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home-card-shell .home-card {
+  flex: 1;
+  width: 100%;
+}
+
+.profile-header__link {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.profile-header__link:hover {
+  text-decoration: underline;
+}
+
+.preview-credit {
+  margin: 0.4rem 0.15rem 0;
+  font-size: 0.66rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Reserve two lines so a longer credit doesn't shorten its card and break
+   the row's bottom alignment. */
+.home-card-shell .preview-credit {
+  min-height: 1.85rem;
+}
+
+.preview-credit a {
+  color: color-mix(in srgb, var(--text-muted), var(--text) 55%);
+  text-underline-offset: 2px;
+  transition: color var(--duration-quick) var(--ease-smooth-out);
+}
+
+.preview-credit a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .home-card {
   display: flex;
   flex-direction: column;
@@ -1817,7 +1986,7 @@ body {
   padding: 0.85rem;
   cursor: pointer;
   box-shadow: var(--shadow-soft);
-  transition: transform 200ms var(--ease-smooth-out), box-shadow 200ms ease, border-color 200ms ease;
+  transition: transform var(--duration-medium) var(--ease-smooth-out), box-shadow var(--duration-medium) var(--ease-smooth-out), border-color var(--duration-medium) var(--ease-smooth-out);
 }
 
 .home-card:hover {
@@ -2186,7 +2355,7 @@ body {
   font-weight: 600;
   padding: 0.4rem 0.78rem;
   text-decoration: none;
-  transition: transform 150ms var(--ease-smooth-out), box-shadow 150ms ease, border-color 150ms ease;
+  transition: transform var(--duration-fast) var(--ease-smooth-out), box-shadow var(--duration-fast) var(--ease-smooth-out), border-color var(--duration-fast) var(--ease-smooth-out);
 }
 
 .gh-star:hover {
